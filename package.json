@@ -1,6 +1,6 @@
 {
-  "name": "access-photoprocessor",
-  "productName": "ACCESS-PhotoProcessor",
+  "name": "PRISM",
+  "productName": "PRISM",
   "version": "1.0.0",
   "description": "Batch event-photo enhancer and logo stamper, styled after Upscayl.",
   "main": "src/main/main.js",
@@ -29,16 +29,16 @@
     "vite": "^5.2.11",
     "wait-on": "^7.2.0"
   },
-  "build": {
-    "appId": "org.access.photoprocessor",
-    "productName": "ACCESS-PhotoProcessor",
+"build": {
+    "appId": "org.prism.photoprocessor",
+    "productName": "PRISM",
     "files": [
       "dist/**",
       "src/main/**",
       "node_modules/**"
     ],
     "win": {
-      "target": "nsis",
+      "target": "portable",
       "icon": "build/icon.ico"
     },
     "mac": {
