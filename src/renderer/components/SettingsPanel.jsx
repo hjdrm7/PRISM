@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import LabeledSlider from "./LabeledSlider.jsx";
+import AngleDial from "./AngleDial.jsx";
 
 const MAX_LOGOS = 5;
 
@@ -7,7 +8,7 @@ function LogoRow({ index, value, onChoose, onRemove }) {
   const filename = value ? value.split(/[/\\]/).pop() : "";
   return (
     <div className="mb-3">
-      <label className="mb-1.5 block text-xs font-medium text-slate-300">Watermark {index + 1}</label>
+      <label className="mb-1.5 block text-xs font-medium text-slate-300">Logo {index + 1}</label>
       <div className="flex items-center gap-2">
         <button
           onClick={onChoose}
@@ -86,7 +87,7 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
           </button>
         }
       >
-        {logos.length === 0 && <p className="mb-3 text-xs text-base-500">No watermarks added yet.</p>}
+        {logos.length === 0 && <p className="mb-3 text-xs text-base-500">No logos added yet.</p>}
 
         {logos.map((logoPath, index) => (
           <LogoRow
@@ -122,80 +123,213 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
           </div>
         </div>
 
-        <LabeledSlider label="Watermark Size" value={config.logoScalePercent} min={2} max={40} onChange={set("logoScalePercent")} />
-        <LabeledSlider label="Watermark Opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
+        <LabeledSlider label="Logo size" value={config.logoScalePercent} min={2} max={40} onChange={set("logoScalePercent")} />
+        <LabeledSlider label="Logo opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
 
-        <label className="mb-1.5 block text-xs font-medium text-slate-300">Watermark Effects</label>
-        <div className="mb-2 flex gap-1.5">
+        <div className="mb-3 rounded-xl2 border border-base-800 p-3">
           <button
             onClick={() => set("logoShadow")(!config.logoShadow)}
-            className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-              config.logoShadow
-                ? "border-accent bg-accent/15 text-accent"
-                : "border-base-700 text-slate-400 hover:border-base-600"
-            }`}
+            className="flex w-full items-center justify-between"
           >
-            Black shadow
+            <span className={`text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>Shadow</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                config.logoShadow ? "bg-accent/15 text-accent" : "bg-base-800 text-base-500"
+              }`}
+            >
+              {config.logoShadow ? "On" : "Off"}
+            </span>
           </button>
-          <button
-            onClick={() => set("logoOutline")(!config.logoOutline)}
-            className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-              config.logoOutline
-                ? "border-accent bg-accent/15 text-accent"
-                : "border-base-700 text-slate-400 hover:border-base-600"
-            }`}
-          >
-            White outline
-          </button>
+
+          {config.logoShadow && (
+            <div className="mt-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-slate-300">Shadow color</label>
+                <input
+                  type="color"
+                  value={config.logoShadowColor || "#000000"}
+                  onChange={(e) => set("logoShadowColor")(e.target.value)}
+                  className="h-7 w-10 cursor-pointer rounded border border-base-700 bg-base-900 p-0.5"
+                />
+              </div>
+
+              <LabeledSlider
+                label="Shadow distance"
+                value={config.logoShadowDistancePercent}
+                min={0}
+                max={30}
+                step={0.5}
+                onChange={set("logoShadowDistancePercent")}
+              />
+
+              <LabeledSlider
+                label="Shadow opacity"
+                value={config.logoShadowOpacityPercent ?? 100}
+                min={0}
+                max={100}
+                onChange={set("logoShadowOpacityPercent")}
+              />
+
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-medium text-slate-300">Shadow angle</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      max={360}
+                      step={1}
+                      value={Math.round(config.logoShadowAngle)}
+                      onChange={(e) => {
+                        const num = Number(e.target.value);
+                        if (!Number.isNaN(num)) set("logoShadowAngle")(Math.min(360, Math.max(0, num)));
+                      }}
+                      className="w-14 rounded-md border border-base-700 bg-base-900 px-1.5 py-0.5 text-right text-xs font-semibold text-accent focus:border-accent focus:outline-none"
+                    />
+                    <span className="text-xs font-semibold text-accent">°</span>
+                  </div>
+                  <AngleDial value={config.logoShadowAngle} onChange={set("logoShadowAngle")} size={56} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {config.logoOutline && (
-          <LabeledSlider
-            label="Outline size"
-            value={config.logoOutlineSizePercent}
-            min={1}
-            max={20}
-            step={0.5}
-            onChange={set("logoOutlineSizePercent")}
-          />
-        )}
+        <div className="mb-1 rounded-xl2 border border-base-800 p-3">
+          <button
+            onClick={() => set("logoOutline")(!config.logoOutline)}
+            className="flex w-full items-center justify-between"
+          >
+            <span className={`text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>Outline</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                config.logoOutline ? "bg-accent/15 text-accent" : "bg-base-800 text-base-500"
+              }`}
+            >
+              {config.logoOutline ? "On" : "Off"}
+            </span>
+          </button>
 
-        {config.logoShadow && (
+          {config.logoOutline && (
+            <div className="mt-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-slate-300">Outline color</label>
+                <input
+                  type="color"
+                  value={config.logoOutlineColor || "#ffffff"}
+                  onChange={(e) => set("logoOutlineColor")(e.target.value)}
+                  className="h-7 w-10 cursor-pointer rounded border border-base-700 bg-base-900 p-0.5"
+                />
+              </div>
+
+              <LabeledSlider
+                label="Outline size"
+                value={config.logoOutlineSizePercent}
+                min={1}
+                max={20}
+                step={0.5}
+                onChange={set("logoOutlineSizePercent")}
+              />
+
+              <LabeledSlider
+                label="Outline opacity"
+                value={config.logoOutlineOpacityPercent ?? 100}
+                min={0}
+                max={100}
+                onChange={set("logoOutlineOpacityPercent")}
+              />
+            </div>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Enhancement">
+        <div className="mb-4 flex gap-1.5">
+          {[
+            { key: "auto", label: "Auto" },
+            { key: "manual", label: "Manual" }
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => set("enhancementMode")(opt.key)}
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                (config.enhancementMode || "auto") === opt.key
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-base-700 text-slate-400 hover:border-base-600"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {(config.enhancementMode || "auto") === "auto" ? (
+          <LabeledSlider
+            label="Enhancement intensity"
+            value={config.enhancementIntensity}
+            min={0}
+            max={100}
+            onChange={set("enhancementIntensity")}
+          />
+        ) : (
           <>
+            <LabeledSlider label="Hue" value={config.manualHue ?? 0} min={-180} max={180} unit="°" onChange={set("manualHue")} />
             <LabeledSlider
-              label="Shadow distance"
-              value={config.logoShadowDistancePercent}
-              min={0}
-              max={30}
-              step={0.5}
-              onChange={set("logoShadowDistancePercent")}
+              label="Saturation"
+              value={config.manualSaturation ?? 0}
+              min={-100}
+              max={100}
+              onChange={set("manualSaturation")}
             />
             <LabeledSlider
-              label="Shadow angle"
-              value={config.logoShadowAngle}
+              label="Brightness (Value)"
+              value={config.manualBrightness ?? 0}
+              min={-100}
+              max={100}
+              onChange={set("manualBrightness")}
+            />
+            <LabeledSlider
+              label="Contrast"
+              value={config.manualContrast ?? 0}
+              min={-100}
+              max={100}
+              onChange={set("manualContrast")}
+            />
+            <LabeledSlider
+              label="Exposure"
+              value={config.manualExposure ?? 0}
+              min={-100}
+              max={100}
+              onChange={set("manualExposure")}
+            />
+            <LabeledSlider
+              label="Highlights"
+              value={config.manualHighlights ?? 0}
+              min={-100}
+              max={100}
+              onChange={set("manualHighlights")}
+            />
+            <LabeledSlider
+              label="Shadows"
+              value={config.manualShadows ?? 0}
+              min={-100}
+              max={100}
+              onChange={set("manualShadows")}
+            />
+            <LabeledSlider
+              label="Sharpen"
+              value={config.manualSharpen ?? 0}
               min={0}
-              max={360}
-              step={1}
-              unit="°"
-              onChange={set("logoShadowAngle")}
+              max={100}
+              onChange={set("manualSharpen")}
             />
           </>
         )}
       </Section>
 
-      <Section title="Enhancement">
-        <LabeledSlider
-          label="Enhancement Intensity"
-          value={config.enhancementIntensity}
-          min={0}
-          max={100}
-          onChange={set("enhancementIntensity")}
-        />
-      </Section>
-
       <Section title="Output">
         <div className="mb-4">
-          <label className="mb-1.5 block text-xs font-medium text-slate-300">Output Folder</label>
+          <label className="mb-1.5 block text-xs font-medium text-slate-300">Output folder</label>
           <button
             onClick={onChooseOutputFolder}
             className="w-full truncate rounded-lg border border-base-700 bg-base-900 px-3 py-2 text-left text-xs text-slate-300 hover:border-accent/50"

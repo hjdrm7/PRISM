@@ -2,16 +2,18 @@
  * processor.js
  * Core image processing engine (Node/sharp) for ACCESS-PhotoProcessor.
  *
- * Enhancement order (same reasoning as the original plan — sharpen goes
- * LAST, after noise reduction, so it doesn't amplify grain that denoising
- * would otherwise smooth back out):
- *   1. Normalize (auto white-balance / levels stretch)
- *   2. CLAHE (local contrast)
- *   3. Median filter (light noise reduction)
- *   4. Saturation boost
- *   5. Sharpen (unsharp mask)
- *
- * Every step is scaled by a single 0-100 `enhancementIntensity` value.
+ * Two enhancement modes:
+ *   - Auto: a single 0-100 `enhancementIntensity` slider scales a fixed
+ *     pipeline — sharpen goes LAST, after noise reduction, so it doesn't
+ *     amplify grain that denoising would otherwise smooth back out:
+ *       1. Normalize (auto white-balance / levels stretch)
+ *       2. CLAHE (local contrast)
+ *       3. Median filter (light noise reduction)
+ *       4. Saturation boost
+ *       5. Sharpen (unsharp mask)
+ *   - Manual: independent Hue, Saturation, Brightness/Value, Contrast,
+ *     Exposure, Highlights, Shadows, and Sharpen controls. See
+ *     buildManualPipeline / buildToneCurveLUT below.
  */
 
 const sharp = require("sharp");
@@ -25,9 +27,10 @@ function clampIntensity(intensity) {
 }
 
 /**
- * Build a sharp pipeline with the enhancement steps applied, scaled by intensity.
+ * Build a sharp pipeline with the "Auto" enhancement steps applied,
+ * scaled by a single 0-100 intensity value.
  */
-function buildEnhancedPipeline(image, intensity) {
+function buildAutoPipeline(image, intensity) {
   const factor = clampIntensity(intensity);
   if (factor === 0) return image;
 
@@ -63,32 +66,183 @@ function buildEnhancedPipeline(image, intensity) {
 }
 
 /**
+ * Build a 256-entry lookup table mapping input level (0-255) to output
+ * level, combining exposure, contrast, highlights, and shadows into a
+ * single tone curve. Applied identically to R/G/B (not alpha) via raw
+ * pixel remapping — sharp has no built-in per-tonal-range control, so
+ * this is a lightweight approximation rather than a true zone-based
+ * curve, but it's smooth and gives each slider an independent, visible
+ * effect:
+ *   - Exposure: a multiplicative (stops-based) brightness shift applied
+ *     to the whole range first, like adjusting light captured.
+ *   - Highlights / Shadows: additive shifts weighted toward the bright
+ *     or dark end of the range respectively (t² / (1-t)²), so each
+ *     mostly leaves the opposite end alone.
+ *   - Contrast: a linear scale around the 128 midpoint, applied last.
+ */
+function buildToneCurveLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0 }) {
+  const lut = new Uint8ClampedArray(256);
+
+  const exposureFactor = Math.pow(2, (exposure / 100) * 2); // -100..100 -> 0.25x..4x
+  const contrastFactor = 1 + contrast / 100; // -100..100 -> 0..2x
+  const highlightsAmount = (highlights / 100) * 80; // up to +-80 levels
+  const shadowsAmount = (shadows / 100) * 80;
+
+  for (let x = 0; x < 256; x++) {
+    let y = x * exposureFactor;
+
+    const t = x / 255;
+    const highlightWeight = t * t;
+    const shadowWeight = (1 - t) * (1 - t);
+    y += highlightsAmount * highlightWeight;
+    y += shadowsAmount * shadowWeight;
+
+    y = 128 + (y - 128) * contrastFactor;
+
+    lut[x] = Math.max(0, Math.min(255, Math.round(y)));
+  }
+
+  return lut;
+}
+
+/**
+ * Build a sharp pipeline for "Manual" mode: tone curve (exposure,
+ * contrast, highlights, shadows) via raw-pixel LUT remap, then hue,
+ * saturation, and brightness/value via sharp's native (fast, high
+ * quality) modulate, then an optional sharpen pass.
+ */
+async function buildManualPipeline(image, config) {
+  const {
+    manualExposure = 0,
+    manualContrast = 0,
+    manualHighlights = 0,
+    manualShadows = 0,
+    manualHue = 0,
+    manualSaturation = 0,
+    manualBrightness = 0,
+    manualSharpen = 0
+  } = config;
+
+  let working = image;
+
+  const needsToneCurve = manualExposure !== 0 || manualContrast !== 0 || manualHighlights !== 0 || manualShadows !== 0;
+
+  if (needsToneCurve) {
+    const lut = buildToneCurveLUT({
+      exposure: manualExposure,
+      contrast: manualContrast,
+      highlights: manualHighlights,
+      shadows: manualShadows
+    });
+
+    const { data, info } = await working.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const channels = info.channels;
+
+    for (let i = 0; i < data.length; i += channels) {
+      data[i] = lut[data[i]];
+      data[i + 1] = lut[data[i + 1]];
+      data[i + 2] = lut[data[i + 2]];
+      // alpha (data[i + 3]) left untouched
+    }
+
+    working = sharp(data, { raw: { width: info.width, height: info.height, channels } });
+  }
+
+  let pipeline = working;
+
+  const hueDeg = Math.round(manualHue) % 360;
+  const satMultiplier = Math.max(0, 1 + manualSaturation / 100);
+  const brightnessMultiplier = Math.max(0, 1 + manualBrightness / 100);
+
+  if (hueDeg !== 0 || manualSaturation !== 0 || manualBrightness !== 0) {
+    pipeline = pipeline.modulate({
+      hue: hueDeg,
+      saturation: satMultiplier,
+      brightness: brightnessMultiplier
+    });
+  }
+
+  if (manualSharpen > 0) {
+    const amount = Math.max(0, Math.min(100, manualSharpen)) / 100;
+    const sigma = 0.5 + 1.5 * amount;
+    const m1 = 0.2 + 0.8 * amount;
+    pipeline = pipeline.sharpen({ sigma, m1, m2: 0.2 });
+  }
+
+  return pipeline;
+}
+
+/**
+ * Dispatches to the Auto (single-intensity) or Manual (per-property)
+ * enhancement pipeline based on config.enhancementMode. Anything other
+ * than exactly "manual" (including undefined, for older saved configs)
+ * falls back to Auto.
+ */
+async function buildEnhancedPipeline(image, config) {
+  if (config.enhancementMode === "manual") {
+    return buildManualPipeline(image, config);
+  }
+  return buildAutoPipeline(image, config.enhancementIntensity);
+}
+
+/**
+ * Parse a "#rrggbb" hex color string (as produced by an <input type="color">)
+ * into an {r,g,b} object. Falls back to the given default on anything
+ * malformed or missing.
+ */
+function hexToRgb(hex, fallback) {
+  const match = typeof hex === "string" && /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return fallback;
+  const int = parseInt(match[1], 16);
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+}
+
+/**
  * Build a flat-color silhouette of a logo: same alpha shape, solid RGB fill.
  * Uses sharp's "dest-in" blend to keep a solid-color layer only where the
- * logo's own alpha is opaque.
+ * logo's own alpha is opaque. An optional opacity (0-1) further scales the
+ * silhouette's alpha channel, e.g. to make a shadow or outline translucent.
  */
-async function makeSilhouette(logoPngBuffer, colorRgb, width, height) {
+async function makeSilhouette(logoPngBuffer, colorRgb, width, height, opacity = 1) {
   const solid = await sharp({
     create: { width, height, channels: 4, background: { ...colorRgb, alpha: 1 } }
   })
     .png()
     .toBuffer();
 
-  return sharp(solid).composite([{ input: logoPngBuffer, blend: "dest-in" }]).png().toBuffer();
+  const silhouette = await sharp(solid).composite([{ input: logoPngBuffer, blend: "dest-in" }]).png().toBuffer();
+
+  if (opacity >= 1) return silhouette;
+
+  const { data, info } = await sharp(silhouette).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let i = 3; i < data.length; i += 4) {
+    data[i] = Math.round(data[i] * opacity);
+  }
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
 }
 
 /**
- * Add a black drop shadow and/or a white outline behind a logo (PNG buffer
- * with alpha). sharp has no built-in shadow/outline filter, so both are
- * built from silhouettes of the logo's own alpha shape:
- *   - Shadow: a blurred black silhouette, offset down-right, at reduced opacity.
- *   - Outline: a ring of solid-white silhouettes offset a few px in every
+ * Add a drop shadow and/or an outline behind a logo (PNG buffer with
+ * alpha), each in a user-chosen color. sharp has no built-in shadow/outline
+ * filter, so both are built from silhouettes of the logo's own alpha shape:
+ *   - Shadow: a blurred silhouette, offset by angle/distance, at reduced opacity.
+ *   - Outline: a ring of solid silhouettes offset a few px in every
  *     direction, which fills in to a rim around the logo's edges.
  * The canvas is padded so neither effect gets clipped.
  */
 async function applyLogoEffects(
   logoPngBuffer,
-  { shadow, outline, outlineWidthPercent = 3.5, shadowDistancePercent = 5, shadowAngleDeg = 135 }
+  {
+    shadow,
+    outline,
+    outlineWidthPercent = 3.5,
+    shadowDistancePercent = 5,
+    shadowAngleDeg = 135,
+    shadowColor = "#000000",
+    shadowOpacityPercent = 100,
+    outlineColor = "#ffffff",
+    outlineOpacityPercent = 100
+  }
 ) {
   if (!shadow && !outline) return logoPngBuffer;
 
@@ -116,19 +270,21 @@ async function applyLogoEffects(
   const layers = [];
 
   if (shadow) {
-    const blackSilhouette = await makeSilhouette(logoPngBuffer, { r: 0, g: 0, b: 0 }, width, height);
-    const blurredShadow = await sharp(blackSilhouette).blur(shadowBlur).png().toBuffer();
+    const shadowRgb = hexToRgb(shadowColor, { r: 0, g: 0, b: 0 });
+    const shadowSilhouette = await makeSilhouette(logoPngBuffer, shadowRgb, width, height, clampIntensity(shadowOpacityPercent));
+    const blurredShadow = await sharp(shadowSilhouette).blur(shadowBlur).png().toBuffer();
     layers.push({ input: blurredShadow, left: pad + shadowDx, top: pad + shadowDy });
   }
 
   if (outline) {
-    const whiteSilhouette = await makeSilhouette(logoPngBuffer, { r: 255, g: 255, b: 255 }, width, height);
+    const outlineRgb = hexToRgb(outlineColor, { r: 255, g: 255, b: 255 });
+    const outlineSilhouette = await makeSilhouette(logoPngBuffer, outlineRgb, width, height, clampIntensity(outlineOpacityPercent));
     const ringSteps = 16;
     for (let i = 0; i < ringSteps; i++) {
       const angle = (2 * Math.PI * i) / ringSteps;
       const dx = Math.round(Math.cos(angle) * outlineWidth);
       const dy = Math.round(Math.sin(angle) * outlineWidth);
-      layers.push({ input: whiteSilhouette, left: pad + dx, top: pad + dy });
+      layers.push({ input: outlineSilhouette, left: pad + dx, top: pad + dy });
     }
   }
 
@@ -193,12 +349,16 @@ const MAX_LOGOS = 5;
 
 /**
  * Composite up to MAX_LOGOS logos into the chosen corner with consistent
- * spacing, sized as a percentage of the base image width so results stay
- * consistent across mixed-resolution source photos.
+ * spacing, sized as a percentage of the base image's shorter side (not
+ * always its width) so the logo comes out the same physical size whether
+ * the source photo is landscape or portrait — using width alone would
+ * make the logo shrink on portrait shots, since their width is the short
+ * dimension.
  */
 async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityPercent, effects = {}, position = "bottom-right") {
-  const targetWidth = Math.max(1, Math.round(baseMeta.width * (scalePercent / 100)));
-  const margin = Math.max(4, Math.round(baseMeta.width * 0.015));
+  const referenceDimension = Math.min(baseMeta.width, baseMeta.height);
+  const targetWidth = Math.max(1, Math.round(referenceDimension * (scalePercent / 100)));
+  const margin = Math.max(4, Math.round(referenceDimension * 0.015));
 
   const isRight = position === "top-right" || position === "bottom-right";
   const isBottom = position === "bottom-right" || position === "bottom-left";
@@ -280,13 +440,32 @@ function resolveOutputPath(outputFolder, filename, collisionStrategy) {
 }
 
 /**
+ * sharp reports width/height from the raw file, but EXIF orientation tags
+ * 5-8 mean the pixels are stored rotated 90°/270° from how the photo should
+ * actually be displayed. Once we call .rotate() (auto-orient) on the image,
+ * its real output dimensions are the swapped pair — this keeps logo sizing
+ * and corner placement working off the correct (post-rotation) canvas.
+ */
+function getOrientedMeta(meta) {
+  if (meta.orientation && meta.orientation >= 5 && meta.orientation <= 8) {
+    return { ...meta, width: meta.height, height: meta.width };
+  }
+  return meta;
+}
+
+/**
  * Process a single image end-to-end and return a sharp instance ready to save.
  */
 async function buildProcessedImage(imagePath, config) {
-  const image = sharp(imagePath);
-  const meta = await image.metadata();
+  const rawMeta = await sharp(imagePath).metadata();
+  // .rotate() with no args auto-orients the pixels per the file's EXIF
+  // Orientation tag and strips that tag from the output, so the saved
+  // image displays correctly everywhere instead of relying on each
+  // viewer to apply the rotation itself (which not all do).
+  const image = sharp(imagePath).rotate();
+  const meta = getOrientedMeta(rawMeta);
 
-  let pipeline = buildEnhancedPipeline(image, config.enhancementIntensity);
+  let pipeline = await buildEnhancedPipeline(image, config);
 
   if (config.logos && config.logos.length) {
     // Need the enhanced pixels resolved before compositing, so buffer through.
@@ -303,7 +482,11 @@ async function buildProcessedImage(imagePath, config) {
         outline: !!config.logoOutline,
         outlineWidthPercent: config.logoOutlineSizePercent,
         shadowDistancePercent: config.logoShadowDistancePercent,
-        shadowAngleDeg: config.logoShadowAngle
+        shadowAngleDeg: config.logoShadowAngle,
+        shadowColor: config.logoShadowColor,
+        shadowOpacityPercent: config.logoShadowOpacityPercent,
+        outlineColor: config.logoOutlineColor,
+        outlineOpacityPercent: config.logoOutlineOpacityPercent
       },
       config.logoPosition
     );
@@ -331,8 +514,9 @@ async function processPreview(imagePath, config) {
   const PREVIEW_MAX = 640;
 
   const originalBuffer = await sharp(imagePath)
+    .rotate()
     .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside" })
-    .jpeg({ quality: 90 })
+    .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
     .toBuffer();
 
   const { pipeline } = await buildProcessedImage(imagePath, config);
@@ -347,8 +531,11 @@ async function processPreview(imagePath, config) {
   // downscale that finished buffer as a separate step.
   const fullProcessedBuffer = await pipeline.toBuffer();
   const processedBuffer = await sharp(fullProcessedBuffer)
-    .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside" })
-    .jpeg({ quality: 90 })
+    .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside", kernel: "lanczos3" })
+    // 4:4:4 chroma keeps the logo's saturated edges crisp — the default
+    // 4:2:0 subsampling halves color resolution and was the main source
+    // of watermark blur in the preview (most visible on colored logos).
+    .jpeg({ quality: 92, chromaSubsampling: "4:4:4" })
     .toBuffer();
 
   return {

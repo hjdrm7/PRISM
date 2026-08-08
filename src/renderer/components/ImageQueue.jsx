@@ -33,23 +33,29 @@ export default function ImageQueue({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mx-3 mt-3 flex gap-1.5">
-        <button
-          onClick={() => onModeChange("folder")}
-          className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-            !isImageMode ? "border-accent bg-accent/15 text-accent" : "border-base-700 text-slate-400 hover:border-base-600"
-          }`}
-        >
-          Folder
-        </button>
-        <button
-          onClick={() => onModeChange("image")}
-          className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-            isImageMode ? "border-accent bg-accent/15 text-accent" : "border-base-700 text-slate-400 hover:border-base-600"
-          }`}
-        >
-          Image
-        </button>
+      <div className="mx-3 mt-3 flex justify-center">
+        <div className="relative inline-flex rounded-full border border-base-700 bg-base-950 p-0.5">
+          <div
+            className="absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full bg-accent/15 shadow-sm transition-transform duration-200 ease-out"
+            style={{ transform: isImageMode ? "translateX(calc(100% + 4px))" : "translateX(0)" }}
+          />
+          <button
+            onClick={() => onModeChange("folder")}
+            className={`relative z-10 rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+              !isImageMode ? "text-accent" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Folder Edit
+          </button>
+          <button
+            onClick={() => onModeChange("image")}
+            className={`relative z-10 rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+              isImageMode ? "text-accent" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Image Edit
+          </button>
+        </div>
       </div>
 
       <div
