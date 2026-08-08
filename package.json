@@ -1,7 +1,7 @@
 {
   "name": "PRISM",
   "productName": "PRISM",
-  "version": "v2.3.0",
+  "version": "2.3.0",
   "description": "Batch event-photo enhancer and watermark stamper.",
   "main": "src/main/main.js",
   "scripts": {
@@ -10,7 +10,10 @@
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
     "build": "npm run build:renderer && electron-builder",
-    "dist:win": "npm run build:renderer && electron-builder --win"
+    "dist:win": "npm run build:renderer && electron-builder --win --x64",
+    "dist:mac:arm64": "npm run build:renderer && electron-builder --mac --arm64",
+    "dist:mac:x64": "npm run build:renderer && electron-builder --mac --x64",
+    "dist:linux": "npm run build:renderer && electron-builder --linux --x64"
   },
   "dependencies": {
     "sharp": "^0.33.4"
@@ -29,7 +32,7 @@
     "vite": "^5.2.11",
     "wait-on": "^7.2.0"
   },
-"build": {
+  "build": {
     "appId": "org.prism.photoprocessor",
     "productName": "PRISM",
     "files": [
