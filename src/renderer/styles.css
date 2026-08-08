@@ -48,6 +48,17 @@ input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.15);
 }
 
+/* Hide native spinner arrows on number inputs (e.g. the slider value fields) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .drop-zone-active {
   border-color: #37e0c4 !important;
   background-color: #37e0c410 !important;

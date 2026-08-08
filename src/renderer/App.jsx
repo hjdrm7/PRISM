@@ -3,13 +3,22 @@ import ImageQueue from "./components/ImageQueue.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import CompareSlider from "./components/CompareSlider.jsx";
 
+const MAX_LOGOS = 5;
+
 const DEFAULT_CONFIG = {
   inputFolder: "",
+  inputMode: "folder", // "folder" | "image"
   outputFolder: "",
-  logo1Path: "",
-  logo2Path: "",
+  outputFormat: "original", // "original" | "jpeg" | "png"
+  logos: [],
+  logoPosition: "bottom-right",
   logoScalePercent: 12,
   logoOpacityPercent: 100,
+  logoShadow: false,
+  logoOutline: false,
+  logoOutlineSizePercent: 3.5,
+  logoShadowDistancePercent: 5,
+  logoShadowAngle: 135,
   enhancementIntensity: 60,
   jpegQuality: 97,
   collisionStrategy: "rename"
@@ -42,6 +51,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const saved = await window.api.loadSettings();
+      if (saved.inputMode === "single") saved.inputMode = "image"; // legacy value
       setConfig((c) => ({ ...c, ...saved }));
       if (saved.inputFolder) {
         const found = await window.api.listImages(saved.inputFolder);
@@ -64,13 +74,40 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  const loadFolder = useCallback(async (folderPath) => {
-    setConfig((c) => ({ ...c, inputFolder: folderPath }));
-    const found = await window.api.listImages(folderPath);
+  // Merge new paths into the existing queue, preserving order and
+  // dropping duplicates — used by "image" mode, where the queue is meant
+  // to accumulate images added across multiple browses/drops, potentially
+  // from different folders.
+  const appendImages = useCallback((additions) => {
+    // Defensive: `additions` should always be an array of paths. If a
+    // single path string ever slips through (e.g. an IPC handler
+    // returning a bare string instead of an array), iterating it directly
+    // would split it into individual characters — wrap it instead.
+    const list = Array.isArray(additions) ? additions : additions ? [additions] : [];
+    if (!list.length) return;
+    setImages((prev) => {
+      const seen = new Set(prev);
+      const merged = [...prev];
+      for (const p of list) {
+        if (!seen.has(p)) {
+          merged.push(p);
+          seen.add(p);
+        }
+      }
+      return merged;
+    });
+    setSelectedImage((prev) => prev || list[0]);
+  }, []);
+
+  // "Folder" mode: selecting a folder (or a lone file dropped while in
+  // folder mode) replaces the whole queue with that folder's contents.
+  const loadFolder = useCallback(async (targetPath) => {
+    const found = await window.api.listImages(targetPath);
+    setConfig((c) => ({ ...c, inputFolder: targetPath }));
     setImages(found);
     setSelectedImage(found[0] || null);
     if (!found.length) {
-      setErrorMsg("No JPG/JPEG/PNG images were found in that folder.");
+      setErrorMsg("No supported JPG/JPEG/PNG image(s) were found at that location.");
     }
   }, []);
 
@@ -79,19 +116,77 @@ export default function App() {
     if (folder) await loadFolder(folder);
   }, [loadFolder]);
 
+  // "Image" mode: the picker supports multi-select, and every choice is
+  // added to the existing queue rather than replacing it, so images from
+  // different folders can accumulate together.
+  const onChooseImages = useCallback(async () => {
+    const files = await window.api.chooseInputImage();
+    if (files && files.length) appendImages(files);
+  }, [appendImages]);
+
+  // Drag-and-drop can hand us any mix of files and/or folders. In folder
+  // mode we only ever care about the first dropped path (folder or lone
+  // file), matching the single-target browse flow. In image mode every
+  // dropped path is resolved (a folder drop is expanded to its images)
+  // and the results are appended to the queue.
+  const onDropPaths = useCallback(
+    async (paths) => {
+      if (!paths || !paths.length) return;
+      if (config.inputMode === "folder") {
+        await loadFolder(paths[0]);
+        return;
+      }
+      const resultLists = await Promise.all(paths.map((p) => window.api.listImages(p)));
+      const combined = resultLists.flat();
+      if (!combined.length) {
+        setErrorMsg("No supported JPG/JPEG/PNG image(s) were found at that location.");
+        return;
+      }
+      appendImages(combined);
+    },
+    [config.inputMode, loadFolder, appendImages]
+  );
+
+  const onRemoveImage = useCallback((path) => {
+    setImages((prev) => prev.filter((p) => p !== path));
+    setSelectedImage((prev) => (prev === path ? null : prev));
+  }, []);
+
+  const onModeChange = useCallback((mode) => {
+    // Switching modes clears the current selection so the queue view and
+    // the toggle never disagree about what's loaded.
+    setConfig((c) => ({ ...c, inputMode: mode, inputFolder: "" }));
+    setImages([]);
+    setSelectedImage(null);
+  }, []);
+
   const onChooseOutputFolder = useCallback(async () => {
     const folder = await window.api.chooseFolder();
     if (folder) setConfig((c) => ({ ...c, outputFolder: folder }));
   }, []);
 
-  const onChooseLogo1 = useCallback(async () => {
+  const onAddLogo = useCallback(async () => {
+    if ((config.logos?.length || 0) >= MAX_LOGOS) return;
     const file = await window.api.chooseLogoImage();
-    if (file) setConfig((c) => ({ ...c, logo1Path: file }));
+    if (file) setConfig((c) => ({ ...c, logos: [...(c.logos || []), file] }));
+  }, [config.logos]);
+
+  const onChooseLogoAt = useCallback(async (index) => {
+    const file = await window.api.chooseLogoImage();
+    if (!file) return;
+    setConfig((c) => {
+      const logos = [...(c.logos || [])];
+      logos[index] = file;
+      return { ...c, logos };
+    });
   }, []);
 
-  const onChooseLogo2 = useCallback(async () => {
-    const file = await window.api.chooseLogoImage();
-    if (file) setConfig((c) => ({ ...c, logo2Path: file }));
+  const onRemoveLogoAt = useCallback((index) => {
+    setConfig((c) => {
+      const logos = [...(c.logos || [])];
+      logos.splice(index, 1);
+      return { ...c, logos };
+    });
   }, []);
 
   // Runs a single preview job against the backend. If another job is
@@ -155,14 +250,19 @@ export default function App() {
   }, [
     selectedImage,
     config.enhancementIntensity,
-    config.logo1Path,
-    config.logo2Path,
+    JSON.stringify(config.logos),
+    config.logoPosition,
     config.logoScalePercent,
-    config.logoOpacityPercent
+    config.logoOpacityPercent,
+    config.logoShadow,
+    config.logoOutline,
+    config.logoOutlineSizePercent,
+    config.logoShadowDistancePercent,
+    config.logoShadowAngle
   ]);
 
   const validate = () => {
-    if (!config.inputFolder || images.length === 0) return "Please select an input folder with images.";
+    if (images.length === 0) return "Please add at least one image to process.";
     if (!config.outputFolder) return "Please select an output folder.";
     return null;
   };
@@ -188,6 +288,14 @@ export default function App() {
         ? "Cancelled."
         : `Done. ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`
     );
+
+    // Clear the queue once processing actually finishes, so the next run
+    // starts clean. If the user cancelled partway through, leave the queue
+    // in place — they'll likely want to resume/retry the remaining items.
+    if (!result.cancelled) {
+      setImages([]);
+      setSelectedImage(null);
+    }
   };
 
   const cancelProcessing = async () => {
@@ -202,7 +310,7 @@ export default function App() {
       {/* Title bar */}
       <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-base-800 bg-base-900 px-4">
         <span className="text-lg">🆙</span>
-        <span className="text-sm font-semibold tracking-wide text-slate-100">ACCESS-PhotoProcessor</span>
+        <span className="text-sm font-semibold tracking-wide text-slate-100">PRISM</span>
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -212,9 +320,12 @@ export default function App() {
             images={images}
             selectedImage={selectedImage}
             onSelect={setSelectedImage}
-            onDropFolder={loadFolder}
-            onChooseFolder={onChooseFolder}
+            onDropPaths={onDropPaths}
+            onBrowse={config.inputMode === "image" ? onChooseImages : onChooseFolder}
+            onRemoveImage={onRemoveImage}
             inputFolder={config.inputFolder}
+            mode={config.inputMode}
+            onModeChange={onModeChange}
           />
         </div>
 
@@ -262,8 +373,9 @@ export default function App() {
             config={config}
             setConfig={setConfig}
             onChooseOutputFolder={onChooseOutputFolder}
-            onChooseLogo1={onChooseLogo1}
-            onChooseLogo2={onChooseLogo2}
+            onAddLogo={onAddLogo}
+            onChooseLogoAt={onChooseLogoAt}
+            onRemoveLogoAt={onRemoveLogoAt}
           />
 
           <div className="mt-6 space-y-2">

@@ -1,8 +1,8 @@
 {
   "name": "PRISM",
   "productName": "PRISM",
-  "version": "1.0.0",
-  "description": "Batch event-photo enhancer and logo stamper, styled after Upscayl.",
+  "version": "v2.2.1",
+  "description": "Batch event-photo enhancer and watermark stamper.",
   "main": "src/main/main.js",
   "scripts": {
     "dev:renderer": "vite",

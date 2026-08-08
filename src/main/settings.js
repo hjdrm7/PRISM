@@ -8,13 +8,21 @@ function settingsPath() {
 
 const DEFAULT_SETTINGS = {
   inputFolder: "",
+  inputMode: "folder", // "folder" | "single"
   outputFolder: "",
-  logo1Path: "",
-  logo2Path: "",
+  outputFormat: "original", // "original" | "jpeg" | "png"
+  logos: [], // up to 5 logo file paths, right-to-left in list order
+  logoPosition: "bottom-right", // "top-right" | "bottom-right" | "top-left" | "bottom-left"
   logoScalePercent: 12,
   logoOpacityPercent: 100,
+  logoShadow: false,
+  logoOutline: false,
+  logoOutlineSizePercent: 3.5, // outline ring thickness, as % of logo width
+  logoShadowDistancePercent: 5, // shadow throw distance, as % of logo width
+  logoShadowAngle: 135, // degrees; 0 = right, 90 = down, 135 = down-right
   enhancementIntensity: 60,
   jpegQuality: 97,
+  filenameSuffix: "", // free-text appended before the extension, e.g. "_edited"
   collisionStrategy: "rename" // "rename" | "overwrite" | "skip"
 };
 

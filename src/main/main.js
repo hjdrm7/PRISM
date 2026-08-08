@@ -63,17 +63,36 @@ ipcMain.handle("dialog:choose-image", async () => {
   return result.filePaths[0];
 });
 
+ipcMain.handle("dialog:choose-input-image", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile", "multiSelections"],
+    filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png"] }]
+  });
+  if (result.canceled || !result.filePaths.length) return [];
+  return result.filePaths;
+});
+
 // ---------------------------------------------------------------------------
 // IPC: folder scanning (drag-drop of a folder path resolves here too)
 // ---------------------------------------------------------------------------
 
-ipcMain.handle("fs:list-images", async (_evt, folderPath) => {
-  if (!folderPath || !fs.existsSync(folderPath)) return [];
-  const entries = fs.readdirSync(folderPath, { withFileTypes: true });
-  return entries
-    .filter((e) => e.isFile() && SUPPORTED_EXTENSIONS.includes(path.extname(e.name).toLowerCase()))
-    .map((e) => path.join(folderPath, e.name))
-    .sort();
+ipcMain.handle("fs:list-images", async (_evt, targetPath) => {
+  if (!targetPath || !fs.existsSync(targetPath)) return [];
+  const stat = fs.statSync(targetPath);
+
+  if (stat.isDirectory()) {
+    const entries = fs.readdirSync(targetPath, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile() && SUPPORTED_EXTENSIONS.includes(path.extname(e.name).toLowerCase()))
+      .map((e) => path.join(targetPath, e.name))
+      .sort();
+  }
+
+  if (stat.isFile() && SUPPORTED_EXTENSIONS.includes(path.extname(targetPath).toLowerCase())) {
+    return [targetPath];
+  }
+
+  return [];
 });
 
 // ---------------------------------------------------------------------------

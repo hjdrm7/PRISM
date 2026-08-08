@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
   chooseFolder: () => ipcRenderer.invoke("dialog:choose-folder"),
+  chooseInputImage: () => ipcRenderer.invoke("dialog:choose-input-image"),
   chooseLogoImage: () => ipcRenderer.invoke("dialog:choose-image"),
   listImages: (folderPath) => ipcRenderer.invoke("fs:list-images", folderPath),
 

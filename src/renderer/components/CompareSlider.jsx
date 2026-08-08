@@ -1,15 +1,24 @@
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, useEffect } from "react";
 
 /**
  * Draggable before/after comparison slider, matching Upscayl's
  * signature preview interaction.
+ *
+ * Perf note: mousemove can fire far faster than the screen can repaint
+ * (sometimes 100s of times/sec), and each one was triggering a React
+ * state update + re-render, which is what made dragging feel laggy.
+ * We now coalesce moves with requestAnimationFrame so we update state
+ * at most once per rendered frame, and use pointer capture so a fast
+ * drag that leaves the container doesn't drop/stutter the interaction.
  */
 export default function CompareSlider({ beforeSrc, afterSrc, label }) {
   const [position, setPosition] = useState(50);
   const containerRef = useRef(null);
   const dragging = useRef(false);
+  const rafId = useRef(null);
+  const pendingClientX = useRef(null);
 
-  const updateFromClientX = useCallback((clientX) => {
+  const applyPosition = useCallback((clientX) => {
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -17,13 +26,32 @@ export default function CompareSlider({ beforeSrc, afterSrc, label }) {
     setPosition(Math.min(100, Math.max(0, pct)));
   }, []);
 
+  const scheduleUpdate = useCallback(
+    (clientX) => {
+      pendingClientX.current = clientX;
+      if (rafId.current != null) return;
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        if (pendingClientX.current != null) applyPosition(pendingClientX.current);
+      });
+    },
+    [applyPosition]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (rafId.current != null) cancelAnimationFrame(rafId.current);
+    };
+  }, []);
+
   const onPointerDown = (e) => {
     dragging.current = true;
-    updateFromClientX(e.clientX);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    applyPosition(e.clientX); // respond immediately on click, don't wait a frame
   };
   const onPointerMove = (e) => {
     if (!dragging.current) return;
-    updateFromClientX(e.clientX);
+    scheduleUpdate(e.clientX);
   };
   const stopDrag = () => {
     dragging.current = false;
@@ -40,10 +68,10 @@ export default function CompareSlider({ beforeSrc, afterSrc, label }) {
   return (
     <div
       ref={containerRef}
-      onMouseDown={onPointerDown}
-      onMouseMove={onPointerMove}
-      onMouseUp={stopDrag}
-      onMouseLeave={stopDrag}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stopDrag}
+      onPointerCancel={stopDrag}
       className="relative h-full w-full select-none overflow-hidden rounded-xl2 bg-base-900 shadow-2xl"
     >
       <img src={afterSrc} alt="Processed" className="pointer-events-none h-full w-full object-contain" draggable={false} />
