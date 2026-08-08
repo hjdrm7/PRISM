@@ -1,7 +1,8 @@
-# PRISM
-[![Ask DeepWiki](https://devin.ai/assets/askdeepwiki.png)](https://deepwiki.com/hjdrm7/PRISM)
+# PRISM (Photo Rendering, Image Styling & Marking)
 
-PRISM is a cross-platform desktop application for batch-enhancing event photos and applying consistent watermarks. Built with Electron and React, it leverages the power of the `sharp` library for high-speed, multi-threaded image processing.
+PRISM was developed for the officers and members of ACCESS at USTP Oroquieta.
+
+It is a cross-platform desktop application for batch-enhancing event photos and applying consistent watermarks. Built with Electron and React, PRISM uses the Sharp image-processing library for fast, multi-threaded processing, making it easier to prepare large batches of event photos efficiently.
 
 The interface is organized into three main panels. On the left, an image queue allows you to load images from a folder or add them individually via drag-and-drop. The center panel features an interactive before-and-after comparison slider, providing a real-time preview of your enhancements and watermarks. All settings for enhancement, watermarking, and output are located in the right-hand panel.
 
