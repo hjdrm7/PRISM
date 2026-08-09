@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -11,6 +11,12 @@ let activeBatchController = null;
 const isDev = process.env.NODE_ENV === "development";
 
 function createWindow() {
+  // The app has its own in-window title bar (PRISM logo + settings
+  // button), so the native File/Edit/View/Window/Help menu bar is just
+  // duplicate chrome — strip it globally (covers every window, including
+  // any opened later) rather than per-window.
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -18,12 +24,16 @@ function createWindow() {
     minHeight: 680,
     backgroundColor: "#15181b",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
+  // Belt-and-suspenders on platforms/window-managers where the menu bar
+  // can otherwise flash back in (e.g. briefly on Alt on Windows/Linux).
+  mainWindow.setMenuBarVisibility(false);
 
   if (isDev) {
     mainWindow.loadURL("http://localhost:5173");

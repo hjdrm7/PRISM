@@ -282,9 +282,14 @@ export default function App() {
     }
     if (previewDebounce.current) clearTimeout(previewDebounce.current);
 
+    // Preview generation now runs on a downscaled image (see
+    // processor.js:processPreview), so the backend round-trip is much
+    // cheaper than it used to be — shortened from 350ms so slider drags
+    // feel more responsive without going so low that we spam requests
+    // mid-drag.
     previewDebounce.current = setTimeout(() => {
       runPreview(selectedImage, config);
-    }, 350);
+    }, 180);
 
     return () => clearTimeout(previewDebounce.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps

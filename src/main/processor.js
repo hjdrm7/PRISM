@@ -532,29 +532,67 @@ async function saveProcessed(pipeline, outputPath, jpegQuality) {
 /**
  * Generate a preview pair (original + processed), downscaled for display,
  * returned as data URLs for the renderer.
+ *
+ * Perf note: this used to run the ENTIRE enhancement pipeline (auto-expose
+ * stats, normalise, CLAHE, median filter, sharpen, and/or the manual
+ * raw-pixel tone-curve LUT loop) plus logo compositing at the source
+ * image's full resolution, then downscale the finished result to preview
+ * size afterward. Those per-pixel filters all scale with pixel count, so on
+ * a typical 4000x3000+ photo that meant doing 20-40x more work than the
+ * preview could ever show, on every slider tweak — this was the main
+ * source of preview lag. We now downscale FIRST and run the enhancement
+ * pipeline (and logo compositing) on the already-small image instead, which
+ * gives a visually equivalent preview for a fraction of the compute.
+ *
+ * This is safe to reorder (unlike the full batch path in
+ * buildProcessedImage, which must stay full-res -> composite -> save so the
+ * output file is full quality): logo scale/position are both percentages of
+ * the base canvas, so shrinking the canvas first and then compositing
+ * against ITS dimensions still places the logo correctly, just smaller —
+ * exactly what a preview should show anyway.
  */
 async function processPreview(imagePath, config) {
   const PREVIEW_MAX = 640;
 
-  const originalBuffer = await sharp(imagePath)
+  // Auto-orient, then downscale once up front. This small buffer is reused
+  // as the input to both the "before" thumbnail and the enhancement
+  // pipeline below, instead of re-decoding/re-resizing the source twice.
+  const smallBuffer = await sharp(imagePath)
     .rotate()
-    .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside" })
+    .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside", kernel: "lanczos3" })
+    .toBuffer();
+
+  const originalBuffer = await sharp(smallBuffer)
     .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
     .toBuffer();
 
-  const { pipeline } = await buildProcessedImage(imagePath, config);
+  const smallMeta = await sharp(smallBuffer).metadata();
 
-  // IMPORTANT: sharp always performs .resize() before any .composite()
-  // step, regardless of the order those calls appear in the chain. If we
-  // resize and composite in a single pipeline here, the logo (positioned
-  // and sized using the full-resolution image dimensions) gets composited
-  // onto an already-downscaled canvas and ends up placed off-frame — which
-  // is why logos were invisible in the preview. To fix this we resolve the
-  // full-resolution processed image (with logos baked in) first, then
-  // downscale that finished buffer as a separate step.
-  const fullProcessedBuffer = await pipeline.toBuffer();
-  const processedBuffer = await sharp(fullProcessedBuffer)
-    .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside", kernel: "lanczos3" })
+  let pipeline = await buildEnhancedPipeline(sharp(smallBuffer), config);
+
+  if (config.logos && config.logos.length) {
+    pipeline = await applyLogos(
+      pipeline,
+      smallMeta,
+      config.logos,
+      config.logoScalePercent,
+      config.logoOpacityPercent,
+      {
+        shadow: !!config.logoShadow,
+        outline: !!config.logoOutline,
+        outlineWidthPercent: config.logoOutlineSizePercent,
+        shadowDistancePercent: config.logoShadowDistancePercent,
+        shadowAngleDeg: config.logoShadowAngle,
+        shadowColor: config.logoShadowColor,
+        shadowOpacityPercent: config.logoShadowOpacityPercent,
+        outlineColor: config.logoOutlineColor,
+        outlineOpacityPercent: config.logoOutlineOpacityPercent
+      },
+      config.logoPosition
+    );
+  }
+
+  const processedBuffer = await pipeline
     // 4:4:4 chroma keeps the logo's saturated edges crisp — the default
     // 4:2:0 subsampling halves color resolution and was the main source
     // of watermark blur in the preview (most visible on colored logos).

@@ -63,3 +63,18 @@ input[type="number"] {
   border-color: #37e0c4 !important;
   background-color: #37e0c410 !important;
 }
+
+/* Indeterminate progress bar for single-image processing runs, where a
+   real 0-100% number has only two states (start/end) and can't show
+   meaningful movement in between. */
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+.animate-progress-indeterminate {
+  animation: progress-indeterminate 1.1s ease-in-out infinite;
+}
