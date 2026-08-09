@@ -835,7 +835,7 @@ export default function SettingsPanel({
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       onClick={() => applyFilter("vivid")}
-                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      className={`rounded-lg border px-10 py-1.5 text-xs font-medium transition-colors ${
                         currentFilter === "vivid"
                           ? "border-accent bg-accent/15 text-accent"
                           : "border-base-700 text-slate-400 hover:border-base-600"
@@ -845,13 +845,13 @@ export default function SettingsPanel({
                     </button>
                     <button
                       onClick={() => applyFilter("bw")}
-                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      className={`rounded-lg border px-10 py-1.5 text-xs font-medium transition-colors ${
                         currentFilter === "bw"
                           ? "border-accent bg-accent/15 text-accent"
                           : "border-base-700 text-slate-400 hover:border-base-600"
                       }`}
                     >
-                      BW
+                      B/W
                     </button>
                     {customPresets.map((preset, index) => (
                       <div
