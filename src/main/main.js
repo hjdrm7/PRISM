@@ -24,6 +24,12 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 680,
     backgroundColor: "#15181b",
+    // Taskbar/dock/window-manager icon — separate from the in-app <img>
+    // logo in the title bar (App.jsx), since this one is drawn by the OS
+    // before the renderer even loads. Windows wants .ico, macOS/Linux
+    // will happily take .png; point both at the same base name and keep
+    // whichever files exist under build/.
+    icon: path.join(__dirname, "../../build/icon.png"),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     autoHideMenuBar: true,
     webPreferences: {
@@ -100,6 +106,27 @@ ipcMain.handle("dialog:choose-input-image", async () => {
   });
   if (result.canceled || !result.filePaths.length) return [];
   return result.filePaths;
+});
+
+// ---------------------------------------------------------------------------
+// IPC: small base64 thumbnails for logo previews in the Watermarks panel.
+// The renderer can't load these images via file:// (blocked cross-origin
+// when the page itself is served from http://localhost in dev, and
+// disabled by default under contextIsolation), so the main process reads
+// the file and hands back a small data URL instead.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle("fs:image-thumbnail", async (_evt, filePath) => {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    const buffer = await sharp(filePath)
+      .resize(64, 64, { fit: "inside", withoutEnlargement: true })
+      .png()
+      .toBuffer();
+    return `data:image/png;base64,${buffer.toString("base64")}`;
+  } catch (err) {
+    return null;
+  }
 });
 
 // ---------------------------------------------------------------------------

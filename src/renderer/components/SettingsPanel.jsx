@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import LabeledSlider from "./LabeledSlider.jsx";
 import AngleDial from "./AngleDial.jsx";
-import { Layers, Sparkles, Download, X, Sun, Droplet, Wand2, RotateCcw, Save, Trash2, ChevronUp, ChevronDown, BookMarked } from "lucide-react";
+import { Layers, Sparkles, Download, X, Sun, Droplet, Wand2, RotateCcw, Save, Trash2, ChevronLeft, ChevronRight, BookMarked, Lightbulb, Waves, GripVertical, Image as ImageIcon, Plus } from "lucide-react";
 
 const MAX_LOGOS = 5;
 
@@ -12,64 +12,141 @@ const MAX_LOGOS = 5;
 // are made per-image on the backend instead of from a fixed set of numbers.
 const FILTER_PRESETS = {
   vivid: {
+    manualTemperature: 0,
+    manualTint: 0,
     manualBrightness: 5,
     manualContrast: 15,
     manualExposure: 5,
     manualHighlights: -10,
     manualShadows: 10,
+    manualWhites: 5,
+    manualBlacks: -5,
     manualHue: 0,
+    manualVibrance: 25,
     manualSaturation: 35,
-    manualSharpen: 20
+    manualInvert: false,
+    manualSharpen: 20,
+    manualClarity: 15,
+    manualVignette: 0
   },
   bw: {
+    manualTemperature: 0,
+    manualTint: 0,
     manualBrightness: 0,
     manualContrast: 10,
     manualExposure: 0,
     manualHighlights: -5,
     manualShadows: 5,
+    manualWhites: 0,
+    manualBlacks: 0,
     manualHue: 0,
+    manualVibrance: 0,
     manualSaturation: -100,
-    manualSharpen: 15
+    manualInvert: false,
+    manualSharpen: 15,
+    manualClarity: 10,
+    manualVignette: 0
   }
 };
 
-function LogoRow({ index, value, onChoose, onRemove, onMoveUp, onMoveDown, canMoveUp, canMoveDown }) {
-  const filename = value ? value.split(/[/\\]/).pop() : "";
+function LogoThumb({
+  index,
+  value,
+  onChoose,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  isDragging,
+  isDropTarget
+}) {
+  // file:// image loads are unreliable from the renderer (blocked
+  // cross-origin when the page itself is served over http:// in dev, and
+  // disallowed by default under contextIsolation), so the thumbnail is
+  // fetched from the main process as a small base64 data URL instead.
+  const [thumb, setThumb] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setThumb(null);
+    if (value && window.api?.getImageThumbnail) {
+      window.api.getImageThumbnail(value).then((dataUrl) => {
+        if (!cancelled) setThumb(dataUrl);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+
   return (
-    <div className="mb-3">
-      <label className="mb-1.5 block text-xs font-medium text-slate-300">Logo {index + 1}</label>
-      <div className="flex items-center gap-2">
-        <div className="flex flex-shrink-0 flex-col">
-          <button
-            onClick={onMoveUp}
-            disabled={!canMoveUp}
-            title="Move up"
-            className="rounded-t-md border border-b-0 border-base-700 px-1 py-0.5 text-base-500 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-base-500"
-          >
-            <ChevronUp className="h-3 w-3" />
-          </button>
-          <button
-            onClick={onMoveDown}
-            disabled={!canMoveDown}
-            title="Move down"
-            className="rounded-b-md border border-base-700 px-1 py-0.5 text-base-500 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-base-500"
-          >
-            <ChevronDown className="h-3 w-3" />
-          </button>
-        </div>
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      title={value}
+      className={`group relative h-16 w-16 flex-shrink-0 cursor-grab touch-none rounded-lg transition-opacity active:cursor-grabbing ${
+        isDragging ? "opacity-40" : ""
+      }`}
+    >
+      <button
+        onClick={onChoose}
+        className={`flex h-full w-full items-center justify-center overflow-hidden rounded-lg border transition-colors ${
+          isDropTarget ? "border-accent" : "border-base-700 hover:border-accent/50"
+        }`}
+        style={{
+          backgroundImage:
+            "conic-gradient(#2a2f35 90deg, transparent 90deg 180deg, #2a2f35 180deg 270deg, transparent 270deg)",
+          backgroundSize: "8px 8px",
+          backgroundColor: "#15181b"
+        }}
+      >
+        {thumb ? (
+          <img src={thumb} alt="" className="h-full w-full object-contain" draggable={false} />
+        ) : (
+          <ImageIcon className="h-5 w-5 text-base-500" strokeWidth={1.75} />
+        )}
+      </button>
+
+      {/* Order badge, always visible so stacking order is legible without
+          hovering. */}
+      <span className="pointer-events-none absolute -left-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-base-700 bg-base-900 text-[9px] font-semibold text-base-400">
+        {index + 1}
+      </span>
+
+      {/* Remove + drag-handle + reorder arrows, tucked away until hover so
+          the thumbnail grid stays clean at a glance. */}
+      <button
+        onClick={onRemove}
+        title="Remove"
+        className="absolute -right-1.5 -top-1.5 hidden h-4.5 w-4.5 items-center justify-center rounded-full border border-base-700 bg-base-900 text-base-500 hover:border-red-400 hover:text-red-400 group-hover:flex"
+      >
+        <X className="h-2.5 w-2.5" />
+      </button>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden items-center justify-between px-0.5 pb-0.5 group-hover:flex">
         <button
-          onClick={onChoose}
-          className="flex-1 truncate rounded-lg border border-base-700 bg-base-900 px-3 py-2 text-left text-xs text-slate-300 hover:border-accent/50"
-          title={value}
+          onClick={onMoveUp}
+          disabled={!canMoveUp}
+          title="Move left"
+          className="pointer-events-auto rounded bg-base-900/90 p-0.5 text-base-400 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
         >
-          {filename || "Choose file…"}
+          <ChevronLeft className="h-3 w-3" />
         </button>
+        <GripVertical className="h-3 w-3 rotate-90 text-base-600" />
         <button
-          onClick={onRemove}
-          className="rounded-lg border border-base-700 px-2 py-2 text-base-500 hover:border-red-400 hover:text-red-400"
-          title="Remove"
+          onClick={onMoveDown}
+          disabled={!canMoveDown}
+          title="Move right"
+          className="pointer-events-auto rounded bg-base-900/90 p-0.5 text-base-400 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
         >
-          <X className="h-3.5 w-3.5" />
+          <ChevronRight className="h-3 w-3" />
         </button>
       </div>
     </div>
@@ -156,11 +233,14 @@ function SectionTab({ title, icon: Icon, badge, active, onClick, pulse, dot }) {
 // Small labeled divider above a cluster of related sliders (Tone / Color /
 // Detail), so the 8 manual-enhancement controls read as three scannable
 // groups instead of one undifferentiated stack.
-function SliderGroupHead({ icon: Icon, label }) {
+function SliderGroupHead({ icon: Icon, label, right }) {
   return (
-    <div className="mb-2 flex items-center gap-1.5">
-      <Icon className="h-3 w-3 text-base-500" strokeWidth={2.5} />
-      <span className="text-[10px] font-bold uppercase tracking-wider text-base-500">{label}</span>
+    <div className="mb-2 flex items-center justify-between gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-3 w-3 text-base-500" strokeWidth={2.5} />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-base-500">{label}</span>
+      </div>
+      {right}
     </div>
   );
 }
@@ -173,6 +253,7 @@ export default function SettingsPanel({
   onChooseLogoAt,
   onRemoveLogoAt,
   onMoveLogoAt,
+  onReorderLogo,
   focusSection,
   onFocusSectionHandled
 }) {
@@ -204,8 +285,16 @@ export default function SettingsPanel({
   // Shadow/outline options can be collapsed independently of their On/Off
   // toggle, so turning an effect on doesn't force its panel to stay open —
   // the person can hide the options while leaving the effect enabled.
-  const [shadowExpanded, setShadowExpanded] = useState(true);
-  const [outlineExpanded, setOutlineExpanded] = useState(true);
+  // Both start collapsed so the Watermarks tab isn't a wall of controls
+  // the moment the app opens — the person expands them on demand.
+  const [shadowExpanded, setShadowExpanded] = useState(false);
+  const [outlineExpanded, setOutlineExpanded] = useState(false);
+
+  // Drag-and-drop reorder state for the logo list. dragIndex is the logo
+  // being dragged; dropIndex is whichever row the pointer is currently
+  // over, used only to draw the drop-target outline.
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dropIndex, setDropIndex] = useState(null);
 
   // Presets row (Vivid/BW plus any user-saved presets) gets its own boxed,
   // accent-tinted container and starts open, since presets are a primary
@@ -227,9 +316,42 @@ export default function SettingsPanel({
   // slider underneath hasn't changed).
   const [enhTab, setEnhTab] = useState(null);
 
+  // Lifted out of the enhancement section's render closure (rather than
+  // computed only when that section is open) so a sticky "Reset" footer
+  // pinned to the bottom of the whole panel — outside that section's own
+  // JSX — can still reach current filter/tab state and the reset action.
+  const MANUAL_ZEROED = {
+    manualTemperature: 0,
+    manualTint: 0,
+    manualBrightness: 0,
+    manualContrast: 0,
+    manualExposure: 0,
+    manualHighlights: 0,
+    manualShadows: 0,
+    manualWhites: 0,
+    manualBlacks: 0,
+    manualHue: 0,
+    manualVibrance: 0,
+    manualSaturation: 0,
+    manualInvert: false,
+    manualSharpen: 0,
+    manualClarity: 0,
+    manualVignette: 0
+  };
+  const currentFilter = config.enhancementFilter || "smart";
+  const isSmart = currentFilter === "smart";
+  const effectiveTab = enhTab || (isSmart ? "smart" : "manual");
+  const resetManual = () => {
+    setConfig((c) => ({
+      ...c,
+      ...MANUAL_ZEROED
+    }));
+  };
+  const showManualResetFooter = activeSection === "enhancement" && effectiveTab === "manual";
+
   return (
-    <div className="relative">
-      <div className="mb-5 flex items-center gap-5 border-b border-base-800">
+    <div className="flex h-full flex-col">
+      <div className="flex flex-shrink-0 items-center gap-5 border-b border-base-800 bg-base-900 px-4 pt-4">
         <SectionTab
           title="Watermarks"
           icon={Layers}
@@ -255,33 +377,61 @@ export default function SettingsPanel({
         />
       </div>
 
+      <div className="relative min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-5 [scrollbar-gutter:stable]">
+
       {activeSection === "watermarks" && (
       <div className="pb-5">
-        <div className="mb-3 flex justify-start">
-          <button
-            onClick={onAddLogo}
-            disabled={logos.length >= MAX_LOGOS}
-            className="rounded-md border border-base-700 px-2 py-1 text-xs font-medium text-slate-300 hover:border-accent/50 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            + Add
-          </button>
+        <label className="mb-1.5 block text-xs font-medium text-slate-300">Watermarks</label>
+        <div className="mb-4 flex flex-wrap gap-3">
+          {logos.map((logoPath, index) => (
+            <LogoThumb
+              key={index}
+              index={index}
+              value={logoPath}
+              onChoose={() => onChooseLogoAt(index)}
+              onRemove={() => onRemoveLogoAt(index)}
+              onMoveUp={() => onMoveLogoAt(index, -1)}
+              onMoveDown={() => onMoveLogoAt(index, 1)}
+              canMoveUp={index > 0}
+              canMoveDown={index < logos.length - 1}
+              isDragging={dragIndex === index}
+              isDropTarget={dropIndex === index && dragIndex !== null && dragIndex !== index}
+              onDragStart={(e) => {
+                setDragIndex(index);
+                e.dataTransfer.effectAllowed = "move";
+                // Firefox requires data to be set for the drag to start.
+                e.dataTransfer.setData("text/plain", String(index));
+              }}
+              onDragOver={(e) => {
+                if (dragIndex === null || dragIndex === index) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDropIndex(index);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragIndex !== null && dragIndex !== index) onReorderLogo?.(dragIndex, index);
+                setDragIndex(null);
+                setDropIndex(null);
+              }}
+              onDragEnd={() => {
+                setDragIndex(null);
+                setDropIndex(null);
+              }}
+            />
+          ))}
+
+          {logos.length < MAX_LOGOS && (
+            <button
+              onClick={onAddLogo}
+              title="Add Watermark"
+              className="flex h-16 w-16 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-base-700 text-base-500 hover:border-accent/60 hover:text-accent"
+            >
+              <Plus className="h-4 w-4" strokeWidth={2.25} />
+              <span className="text-[10px] font-medium">Add</span>
+            </button>
+          )}
         </div>
-
-        {logos.length === 0 && <p className="mb-3 text-xs text-base-500">No logos added yet.</p>}
-
-        {logos.map((logoPath, index) => (
-          <LogoRow
-            key={index}
-            index={index}
-            value={logoPath}
-            onChoose={() => onChooseLogoAt(index)}
-            onRemove={() => onRemoveLogoAt(index)}
-            onMoveUp={() => onMoveLogoAt(index, -1)}
-            onMoveDown={() => onMoveLogoAt(index, 1)}
-            canMoveUp={index > 0}
-            canMoveDown={index < logos.length - 1}
-          />
-        ))}
 
         <div className="mb-4">
           <label className="mb-1.5 block text-xs font-medium text-slate-300">Position</label>
@@ -295,7 +445,7 @@ export default function SettingsPanel({
             ];
             const current = config.logoPosition || "bottom-right";
             return (
-              <div className="flex items-center gap-4 rounded-xl2 border border-base-800 p-3">
+              <div className="flex items-center gap-4">
                 <div className="relative h-16 w-24 flex-shrink-0 rounded-lg border border-base-700 bg-base-950">
                   {corners.map((c) => (
                     <button
@@ -320,41 +470,49 @@ export default function SettingsPanel({
           })()}
         </div>
 
-        <LabeledSlider label="Logo size" value={config.logoScalePercent} min={2} max={40} onChange={set("logoScalePercent")} />
-        <LabeledSlider label="Logo opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
+        <LabeledSlider label="Watermark size" value={config.logoScalePercent} min={2} max={40} onChange={set("logoScalePercent")} />
+        <LabeledSlider label="Watermark opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
 
-        <div
-          className={`mb-3 rounded-xl2 border border-base-800 p-3 transition-colors ${
-            config.logoShadow ? "bg-base-900/40" : ""
-          }`}
-        >
-          <div className="flex w-full items-center justify-between gap-2">
+        <div className="my-4 h-px bg-base-800" />
+
+        <div className="mb-3">
+          <div
+            onClick={() => setShadowExpanded((o) => !o)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={shadowExpanded}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setShadowExpanded((o) => !o);
+              }
+            }}
+            title={shadowExpanded ? "Hide shadow options" : "Show shadow options"}
+            className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
+          >
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <button
-                onClick={() => setShadowExpanded((o) => !o)}
-                className="text-xs font-semibold text-left"
+              <span className={`text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>
+                Shadow
+              </span>
+              <span
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
               >
-                <span className={config.logoShadow ? "text-accent" : "text-slate-300"}>Shadow</span>
-              </button>
-              <SwitchPill
-                on={!!config.logoShadow}
-                onToggle={() => set("logoShadow")(!config.logoShadow)}
-                label="Toggle shadow"
-              />
+                <SwitchPill
+                  on={!!config.logoShadow}
+                  onToggle={() => set("logoShadow")(!config.logoShadow)}
+                  label="Toggle shadow"
+                />
+              </span>
             </div>
-            <button
-              onClick={() => setShadowExpanded((o) => !o)}
-              className="flex-shrink-0 text-base-500 hover:text-accent"
-              title={shadowExpanded ? "Hide shadow options" : "Show shadow options"}
-              aria-expanded={shadowExpanded}
-            >
+            <span className="flex-shrink-0 text-base-500">
               <Chevron open={shadowExpanded} />
-            </button>
+            </span>
           </div>
 
           {shadowExpanded && (
             <div
-              className={`mt-3 space-y-3 rounded-lg bg-black/20 p-3 transition-opacity ${
+              className={`mt-3 space-y-3 transition-opacity ${
                 config.logoShadow ? "" : "pointer-events-none opacity-40"
               }`}
               aria-disabled={!config.logoShadow}
@@ -411,38 +569,46 @@ export default function SettingsPanel({
           )}
         </div>
 
-        <div
-          className={`mb-1 rounded-xl2 border border-base-800 p-3 transition-colors ${
-            config.logoOutline ? "bg-base-900/40" : ""
-          }`}
-        >
-          <div className="flex w-full items-center justify-between gap-2">
+        <div className="my-4 h-px bg-base-800" />
+
+        <div className="mb-1">
+          <div
+            onClick={() => setOutlineExpanded((o) => !o)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={outlineExpanded}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOutlineExpanded((o) => !o);
+              }
+            }}
+            title={outlineExpanded ? "Hide outline options" : "Show outline options"}
+            className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
+          >
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <button
-                onClick={() => setOutlineExpanded((o) => !o)}
-                className="text-xs font-semibold text-left"
+              <span className={`text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>
+                Outline
+              </span>
+              <span
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
               >
-                <span className={config.logoOutline ? "text-accent" : "text-slate-300"}>Outline</span>
-              </button>
-              <SwitchPill
-                on={!!config.logoOutline}
-                onToggle={() => set("logoOutline")(!config.logoOutline)}
-                label="Toggle outline"
-              />
+                <SwitchPill
+                  on={!!config.logoOutline}
+                  onToggle={() => set("logoOutline")(!config.logoOutline)}
+                  label="Toggle outline"
+                />
+              </span>
             </div>
-            <button
-              onClick={() => setOutlineExpanded((o) => !o)}
-              className="flex-shrink-0 text-base-500 hover:text-accent"
-              title={outlineExpanded ? "Hide outline options" : "Show outline options"}
-              aria-expanded={outlineExpanded}
-            >
+            <span className="flex-shrink-0 text-base-500">
               <Chevron open={outlineExpanded} />
-            </button>
+            </span>
           </div>
 
           {outlineExpanded && (
             <div
-              className={`mt-3 space-y-3 rounded-lg bg-black/20 p-3 transition-opacity ${
+              className={`mt-3 space-y-3 transition-opacity ${
                 config.logoOutline ? "" : "pointer-events-none opacity-40"
               }`}
               aria-disabled={!config.logoOutline}
@@ -482,16 +648,6 @@ export default function SettingsPanel({
       {activeSection === "enhancement" && (
       <div className="pb-5">
         {(() => {
-          const MANUAL_ZEROED = {
-            manualBrightness: 0,
-            manualContrast: 0,
-            manualExposure: 0,
-            manualHighlights: 0,
-            manualShadows: 0,
-            manualHue: 0,
-            manualSaturation: 0,
-            manualSharpen: 0
-          };
           const customPresets = config.customPresets || [];
 
           const applyFilter = (key) => {
@@ -531,17 +687,6 @@ export default function SettingsPanel({
             }));
           };
 
-          const resetManual = () => {
-            setConfig((c) => ({
-              ...c,
-              ...MANUAL_ZEROED
-            }));
-          };
-
-          const currentFilter = config.enhancementFilter || "smart";
-          const isSmart = currentFilter === "smart";
-          const effectiveTab = enhTab || (isSmart ? "smart" : "manual");
-
           const openSavePreset = () => {
             setPresetNameDraft("");
             setSavingPreset(true);
@@ -554,14 +699,22 @@ export default function SettingsPanel({
             const name = presetNameDraft.trim();
             if (!name) return;
             const values = {
+              manualTemperature: config.manualTemperature ?? 0,
+              manualTint: config.manualTint ?? 0,
               manualBrightness: config.manualBrightness ?? 0,
               manualContrast: config.manualContrast ?? 0,
               manualExposure: config.manualExposure ?? 0,
               manualHighlights: config.manualHighlights ?? 0,
               manualShadows: config.manualShadows ?? 0,
+              manualWhites: config.manualWhites ?? 0,
+              manualBlacks: config.manualBlacks ?? 0,
               manualHue: config.manualHue ?? 0,
+              manualVibrance: config.manualVibrance ?? 0,
               manualSaturation: config.manualSaturation ?? 0,
-              manualSharpen: config.manualSharpen ?? 0
+              manualInvert: config.manualInvert ?? false,
+              manualSharpen: config.manualSharpen ?? 0,
+              manualClarity: config.manualClarity ?? 0,
+              manualVignette: config.manualVignette ?? 0
             };
             setConfig((c) => ({
               ...c,
@@ -666,20 +819,20 @@ export default function SettingsPanel({
 
               {effectiveTab === "presets" && (
                 <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs text-base-500">Apply a look, or save your current Manual adjustments as a new one.</p>
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-xs text-base-500">Apply a look, or save your a new one.</p>
                     <button
                       onClick={openSavePreset}
                       disabled={isSmart}
                       title={isSmart ? "Switch to Manual to save current adjustments as a preset" : "Save current adjustments as a preset"}
-                      className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex w-[148px] flex-shrink-0 items-center justify-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Save className="h-3 w-3" strokeWidth={2.25} />
                       Save Current
                     </button>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 rounded-xl2 border border-base-800 p-3">
+                  <div className="flex flex-wrap gap-1.5">
                     <button
                       onClick={() => applyFilter("vivid")}
                       className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
@@ -741,28 +894,35 @@ export default function SettingsPanel({
                 <div>
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-xs text-base-500">Tone, color, and detail — adjust freely.</p>
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={openSavePreset}
-                        className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
-                      >
-                        <Save className="h-3 w-3" strokeWidth={2.25} />
-                        Save as Preset
-                      </button>
-                      <button
-                        onClick={resetManual}
-                        title="Reset tone, color, and detail adjustments"
-                        className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
-                      >
-                        <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
-                        Reset
-                      </button>
-                    </div>
+                    <button
+                      onClick={openSavePreset}
+                      className="flex w-[148px] flex-shrink-0 items-center justify-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+                    >
+                      <Save className="h-3 w-3" strokeWidth={2.25} />
+                      Save as Preset
+                    </button>
                   </div>
 
-                  <SliderGroupHead icon={Sun} label="Tone" />
+                  <SliderGroupHead icon={Lightbulb} label="White Balance" />
                   <LabeledSlider
-                    label="Brightness (Value)"
+                    label="Temperature"
+                    value={config.manualTemperature ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualTemperature")}
+                  />
+                  <LabeledSlider
+                    label="Tint"
+                    value={config.manualTint ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualTint")}
+                  />
+
+                  <div className="my-4 h-px bg-base-800" />
+                  <SliderGroupHead icon={Sun} label="Light" />
+                  <LabeledSlider
+                    label="Brightness"
                     value={config.manualBrightness ?? 0}
                     min={-100}
                     max={100}
@@ -774,13 +934,6 @@ export default function SettingsPanel({
                     min={-100}
                     max={100}
                     onChange={set("manualContrast")}
-                  />
-                  <LabeledSlider
-                    label="Exposure"
-                    value={config.manualExposure ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualExposure")}
                   />
                   <LabeledSlider
                     label="Highlights"
@@ -796,10 +949,44 @@ export default function SettingsPanel({
                     max={100}
                     onChange={set("manualShadows")}
                   />
+                  <LabeledSlider
+                    label="Whites"
+                    value={config.manualWhites ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualWhites")}
+                  />
+                  <LabeledSlider
+                    label="Blacks"
+                    value={config.manualBlacks ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualBlacks")}
+                  />
 
                   <div className="my-4 h-px bg-base-800" />
-                  <SliderGroupHead icon={Droplet} label="Color" />
+                  <SliderGroupHead
+                    icon={Droplet}
+                    label="Color"
+                    right={
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-base-500">Invert</span>
+                        <SwitchPill
+                          on={!!config.manualInvert}
+                          onToggle={() => set("manualInvert")(!config.manualInvert)}
+                          label="Toggle invert"
+                        />
+                      </div>
+                    }
+                  />
                   <LabeledSlider label="Hue" value={config.manualHue ?? 0} min={-180} max={180} unit="°" onChange={set("manualHue")} />
+                  <LabeledSlider
+                    label="Vibrance"
+                    value={config.manualVibrance ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualVibrance")}
+                  />
                   <LabeledSlider
                     label="Saturation"
                     value={config.manualSaturation ?? 0}
@@ -809,13 +996,27 @@ export default function SettingsPanel({
                   />
 
                   <div className="my-4 h-px bg-base-800" />
-                  <SliderGroupHead icon={Wand2} label="Detail" />
+                  <SliderGroupHead icon={Waves} label="Texture" />
                   <LabeledSlider
-                    label="Sharpen"
+                    label="Sharpness"
                     value={config.manualSharpen ?? 0}
                     min={0}
                     max={100}
                     onChange={set("manualSharpen")}
+                  />
+                  <LabeledSlider
+                    label="Clarity"
+                    value={config.manualClarity ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualClarity")}
+                  />
+                  <LabeledSlider
+                    label="Vignette"
+                    value={config.manualVignette ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualVignette")}
                   />
                 </div>
               )}
@@ -899,6 +1100,20 @@ export default function SettingsPanel({
           </div>
         </div>
       </div>
+      )}
+      </div>
+
+      {showManualResetFooter && (
+        <div className="flex-shrink-0 border-t border-base-800 bg-base-900 px-4 py-3">
+          <button
+            onClick={resetManual}
+            title="Reset tone, color, and detail adjustments"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-base-700 px-2 py-2 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+          >
+            <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
+            Reset
+          </button>
+        </div>
       )}
     </div>
   );

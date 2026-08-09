@@ -116,13 +116,19 @@ async function buildAutoPipeline(image, intensity) {
  *     mostly leaves the opposite end alone.
  *   - Contrast: a linear scale around the 128 midpoint, applied last.
  */
-function buildToneCurveLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0 }) {
+function buildToneCurveLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 }) {
   const lut = new Uint8ClampedArray(256);
 
   const exposureFactor = Math.pow(2, (exposure / 100) * 2); // -100..100 -> 0.25x..4x
   const contrastFactor = 1 + contrast / 100; // -100..100 -> 0..2x
   const highlightsAmount = (highlights / 100) * 80; // up to +-80 levels
   const shadowsAmount = (shadows / 100) * 80;
+  // Whites/Blacks push the extreme ends of the range (near-white / near-black
+  // levels) rather than the broader upper-mid/lower-mid range Highlights and
+  // Shadows target — a steeper (t^4) weighting keeps each mostly clear of the
+  // other pair's territory.
+  const whitesAmount = (whites / 100) * 100;
+  const blacksAmount = (blacks / 100) * 100;
 
   for (let x = 0; x < 256; x++) {
     let y = x * exposureFactor;
@@ -130,8 +136,12 @@ function buildToneCurveLUT({ exposure = 0, contrast = 0, highlights = 0, shadows
     const t = x / 255;
     const highlightWeight = t * t;
     const shadowWeight = (1 - t) * (1 - t);
+    const whiteWeight = t * t * t * t;
+    const blackWeight = (1 - t) * (1 - t) * (1 - t) * (1 - t);
     y += highlightsAmount * highlightWeight;
     y += shadowsAmount * shadowWeight;
+    y += whitesAmount * whiteWeight;
+    y += blacksAmount * blackWeight;
 
     y = 128 + (y - 128) * contrastFactor;
 
@@ -141,43 +151,111 @@ function buildToneCurveLUT({ exposure = 0, contrast = 0, highlights = 0, shadows
   return lut;
 }
 
+function clamp255(v) {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
 /**
- * Build a sharp pipeline for "Manual" mode: tone curve (exposure,
- * contrast, highlights, shadows) via raw-pixel LUT remap, then hue,
- * saturation, and brightness/value via sharp's native (fast, high
- * quality) modulate, then an optional sharpen pass.
+ * Build a sharp pipeline for "Manual" mode. Order of operations, matching
+ * a typical raw-editor stack from bottom to top:
+ *   1. White Balance (Temperature, Tint) + Light (Exposure, Contrast,
+ *      Highlights, Shadows, Whites, Blacks) + Vignette — all folded into a
+ *      single raw-pixel pass (tone curve is a per-channel LUT; temperature/
+ *      tint/vignette need per-pixel or per-channel math a LUT alone can't
+ *      express, so they're applied in the same loop rather than as separate
+ *      sharp operations).
+ *   2. Invert (sharp's native negate).
+ *   3. Color (Hue, Vibrance, Saturation) + Light's Brightness (Value), via
+ *      sharp's native (fast, high quality) modulate.
+ *   4. Texture: Clarity (local contrast) then Sharpness (unsharp mask) —
+ *      sharpen goes last so it isn't softened by any step after it.
  */
 async function buildManualPipeline(image, config) {
   const {
+    manualTemperature = 0,
+    manualTint = 0,
     manualExposure = 0,
     manualContrast = 0,
     manualHighlights = 0,
     manualShadows = 0,
+    manualWhites = 0,
+    manualBlacks = 0,
     manualHue = 0,
+    manualVibrance = 0,
     manualSaturation = 0,
     manualBrightness = 0,
-    manualSharpen = 0
+    manualInvert = false,
+    manualSharpen = 0,
+    manualClarity = 0,
+    manualVignette = 0
   } = config;
 
   let working = image;
 
-  const needsToneCurve = manualExposure !== 0 || manualContrast !== 0 || manualHighlights !== 0 || manualShadows !== 0;
+  const needsToneCurve =
+    manualExposure !== 0 || manualContrast !== 0 || manualHighlights !== 0 || manualShadows !== 0 ||
+    manualWhites !== 0 || manualBlacks !== 0;
+  const needsWhiteBalance = manualTemperature !== 0 || manualTint !== 0;
+  const needsVignette = manualVignette !== 0;
 
-  if (needsToneCurve) {
-    const lut = buildToneCurveLUT({
-      exposure: manualExposure,
-      contrast: manualContrast,
-      highlights: manualHighlights,
-      shadows: manualShadows
-    });
+  if (needsToneCurve || needsWhiteBalance || needsVignette) {
+    const lut = needsToneCurve
+      ? buildToneCurveLUT({
+          exposure: manualExposure,
+          contrast: manualContrast,
+          highlights: manualHighlights,
+          shadows: manualShadows,
+          whites: manualWhites,
+          blacks: manualBlacks
+        })
+      : null;
 
     const { data, info } = await working.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const channels = info.channels;
+    const width = info.width;
 
-    for (let i = 0; i < data.length; i += channels) {
-      data[i] = lut[data[i]];
-      data[i + 1] = lut[data[i + 1]];
-      data[i + 2] = lut[data[i + 2]];
+    // Temperature: push red up / blue down for warmer, the reverse for
+    // cooler. Tint: push green down / magenta (red+blue) up for one
+    // direction, the reverse for the other — matches the amber<->blue and
+    // green<->magenta axes shown in the White Balance sliders.
+    const tempShift = (manualTemperature / 100) * 40; // +-40 levels
+    const tintShift = (manualTint / 100) * 40;
+
+    // Vignette: radial multiplier from image center to corner. Positive
+    // darkens the edges, negative lightens them.
+    const vignetteStrength = Math.max(-100, Math.min(100, manualVignette)) / 100;
+    const cx = width / 2;
+    const cy = info.height / 2;
+    const maxDist = Math.sqrt(cx * cx + cy * cy) || 1;
+
+    let pixelIndex = 0;
+    for (let i = 0; i < data.length; i += channels, pixelIndex++) {
+      let r = lut ? lut[data[i]] : data[i];
+      let g = lut ? lut[data[i + 1]] : data[i + 1];
+      let b = lut ? lut[data[i + 2]] : data[i + 2];
+
+      if (needsWhiteBalance) {
+        r = r + tempShift - tintShift * 0.5;
+        b = b - tempShift - tintShift * 0.5;
+        g = g + tintShift;
+      }
+
+      if (needsVignette) {
+        const x = pixelIndex % width;
+        const y = (pixelIndex / width) | 0;
+        const dx = x - cx;
+        const dy = y - cy;
+        const distT = Math.sqrt(dx * dx + dy * dy) / maxDist; // 0 center -> 1 corner
+        const falloff = distT * distT;
+        const factor = 1 - vignetteStrength * falloff * 0.85;
+        r *= factor;
+        g *= factor;
+        b *= factor;
+      }
+
+      data[i] = clamp255(r);
+      data[i + 1] = clamp255(g);
+      data[i + 2] = clamp255(b);
       // alpha (data[i + 3]) left untouched
     }
 
@@ -186,16 +264,42 @@ async function buildManualPipeline(image, config) {
 
   let pipeline = working;
 
+  if (manualInvert) {
+    pipeline = pipeline.negate({ alpha: false });
+  }
+
   const hueDeg = Math.round(manualHue) % 360;
-  const satMultiplier = Math.max(0, 1 + manualSaturation / 100);
+  // Vibrance is meant to boost muted colors more than already-saturated
+  // ones, while Saturation applies evenly. sharp's modulate() only offers
+  // one uniform saturation control, so as a practical approximation we
+  // fold Vibrance in at reduced strength alongside Saturation rather than
+  // giving it a fully independent, selectivity-aware implementation.
+  const satMultiplier = Math.max(0, 1 + (manualSaturation + manualVibrance * 0.6) / 100);
   const brightnessMultiplier = Math.max(0, 1 + manualBrightness / 100);
 
-  if (hueDeg !== 0 || manualSaturation !== 0 || manualBrightness !== 0) {
+  if (hueDeg !== 0 || manualSaturation !== 0 || manualVibrance !== 0 || manualBrightness !== 0) {
     pipeline = pipeline.modulate({
       hue: hueDeg,
       saturation: satMultiplier,
       brightness: brightnessMultiplier
     });
+  }
+
+  // Clarity: local (midtone) contrast. Positive uses CLAHE to punch up
+  // local contrast; negative softens it slightly instead (there's no
+  // built-in "un-CLAHE", so a gentle blur stands in for reduced clarity).
+  if (manualClarity !== 0) {
+    const amount = Math.max(-100, Math.min(100, manualClarity)) / 100;
+    if (amount > 0) {
+      const claheWidth = Math.max(8, Math.round(64 - 40 * amount));
+      pipeline = pipeline.clahe({
+        width: claheWidth,
+        height: claheWidth,
+        maxSlope: 1 + Math.round(2 * amount)
+      });
+    } else {
+      pipeline = pipeline.blur(1 + Math.abs(amount) * 1.5);
+    }
   }
 
   if (manualSharpen > 0) {

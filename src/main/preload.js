@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("api", {
   chooseInputImage: () => ipcRenderer.invoke("dialog:choose-input-image"),
   chooseLogoImage: () => ipcRenderer.invoke("dialog:choose-image"),
   listImages: (folderPath) => ipcRenderer.invoke("fs:list-images", folderPath),
+  getImageThumbnail: (filePath) => ipcRenderer.invoke("fs:image-thumbnail", filePath),
 
   loadSettings: () => ipcRenderer.invoke("settings:load"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),

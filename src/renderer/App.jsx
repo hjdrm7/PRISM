@@ -3,6 +3,8 @@ import ImageQueue from "./components/ImageQueue.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import CompareSlider from "./components/CompareSlider.jsx";
 import { CheckCircle2, AlertTriangle, StopCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
+import logo from "./assets/prism-logo.png";
+import logoType from "./assets/prism-typo.png";
 
 const MAX_LOGOS = 5;
 
@@ -27,14 +29,22 @@ const DEFAULT_CONFIG = {
   enhancementFilter: "smart", // "smart" | "manual" | "vivid" | "bw"
   enhancementIntensity: 60, // used internally by Smart Enhance; no UI slider anymore
   customPresets: [], // user-saved manual presets: [{ name, values: { manualHue, manualSaturation, ... } }]
+  manualTemperature: 0,
+  manualTint: 0,
   manualHue: 0,
+  manualVibrance: 0,
   manualSaturation: 0,
   manualBrightness: 0,
   manualContrast: 0,
   manualExposure: 0,
   manualHighlights: 0,
   manualShadows: 0,
+  manualWhites: 0,
+  manualBlacks: 0,
+  manualInvert: false,
   manualSharpen: 0,
+  manualClarity: 0,
+  manualVignette: 0,
   jpegQuality: 97,
   filenameSuffix: "",
   collisionStrategy: "rename"
@@ -263,6 +273,28 @@ export default function App() {
     });
   }, []);
 
+  // Drag-and-drop reorder: pulls the dragged logo out of its old slot and
+  // reinserts it at the drop slot, shifting everything between the two
+  // positions rather than swapping just the two endpoints (unlike
+  // onMoveLogoAt, which only swaps adjacent neighbors).
+  const onReorderLogo = useCallback((fromIndex, toIndex) => {
+    setConfig((c) => {
+      const logos = [...(c.logos || [])];
+      if (
+        fromIndex < 0 ||
+        fromIndex >= logos.length ||
+        toIndex < 0 ||
+        toIndex >= logos.length ||
+        fromIndex === toIndex
+      ) {
+        return c;
+      }
+      const [moved] = logos.splice(fromIndex, 1);
+      logos.splice(toIndex, 0, moved);
+      return { ...c, logos };
+    });
+  }, []);
+
   // Runs a single preview job against the backend. If another job is
   // already in flight, we stash this one as "pending" and return — when
   // the in-flight job finishes it will pick up only the latest pending
@@ -330,14 +362,22 @@ export default function App() {
     selectedImage,
     config.enhancementFilter,
     config.enhancementIntensity,
+    config.manualTemperature,
+    config.manualTint,
     config.manualHue,
+    config.manualVibrance,
     config.manualSaturation,
     config.manualBrightness,
     config.manualContrast,
     config.manualExposure,
     config.manualHighlights,
     config.manualShadows,
+    config.manualWhites,
+    config.manualBlacks,
+    config.manualInvert,
     config.manualSharpen,
+    config.manualClarity,
+    config.manualVignette,
     JSON.stringify(config.logos),
     config.logoPosition,
     config.logoScalePercent,
@@ -486,8 +526,8 @@ export default function App() {
 
       {/* Title bar */}
       <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-base-800 bg-base-900 px-4">
-        <span className="text-lg">🆙</span>
-        <span className="text-sm font-semibold tracking-wide text-slate-100">PRISM</span>
+        <img src={logo} className="h-6 w-6" alt="PRISM" />
+        <img src={logoType} className="h-4" alt="PRISM-FONT" />
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -515,10 +555,10 @@ export default function App() {
         <button
           onClick={() => setLeftPanelOpen((o) => !o)}
           title={leftPanelOpen ? "Hide queue panel" : "Show queue panel"}
-          className="relative z-10 -mx-3 flex h-9 w-9 flex-shrink-0 items-center justify-center self-center rounded-full border border-base-700 bg-base-800 text-slate-300 shadow-lg transition-colors hover:bg-base-700 hover:text-accent"
+          className="relative z-10 -ml-px flex h-10 w-5 flex-shrink-0 items-center justify-center self-center rounded-r-lg border border-l-0 border-base-800 bg-base-900 text-base-500 transition-colors hover:bg-base-800 hover:text-accent"
         >
           <ChevronLeft
-            className={`h-4 w-4 transition-transform duration-200 ${leftPanelOpen ? "" : "rotate-180"}`}
+            className={`h-3.5 w-3.5 transition-transform duration-200 ${leftPanelOpen ? "" : "rotate-180"}`}
           />
         </button>
 
@@ -579,7 +619,12 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      <span className="mb-2 text-3xl">🆙</span>
+                      <img
+                        src={logo}
+                        alt=""
+                        className="mb-2 h-10 w-10 animate-logo-flip"
+                        style={{ animationPlayState: cancelRequested ? "paused" : "running" }}
+                      />
                       <p className="text-sm font-semibold text-slate-100">{cancelRequested ? "Cancelling…" : "Hold on…"}</p>
                       {progress.total >= 2 && (
                         <p className="mt-1 text-sm font-semibold text-slate-200">
@@ -648,10 +693,10 @@ export default function App() {
         <button
           onClick={() => setRightPanelOpen((o) => !o)}
           title={rightPanelOpen ? "Hide settings panel" : "Show settings panel"}
-          className="relative z-10 -mx-3 flex h-9 w-9 flex-shrink-0 items-center justify-center self-center rounded-full border border-base-700 bg-base-800 text-slate-300 shadow-lg transition-colors hover:bg-base-700 hover:text-accent"
+          className="relative z-10 -mr-px flex h-10 w-5 flex-shrink-0 items-center justify-center self-center rounded-l-lg border border-r-0 border-base-800 bg-base-900 text-base-500 transition-colors hover:bg-base-800 hover:text-accent"
         >
           <ChevronRight
-            className={`h-4 w-4 transition-transform duration-200 ${rightPanelOpen ? "" : "rotate-180"}`}
+            className={`h-3.5 w-3.5 transition-transform duration-200 ${rightPanelOpen ? "" : "rotate-180"}`}
           />
         </button>
 
@@ -662,7 +707,7 @@ export default function App() {
           }`}
         >
           <div className="flex h-full w-[28rem] flex-col">
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="min-h-0 flex-1">
               <SettingsPanel
                 config={config}
                 setConfig={setConfig}
@@ -671,6 +716,7 @@ export default function App() {
                 onChooseLogoAt={onChooseLogoAt}
                 onRemoveLogoAt={onRemoveLogoAt}
                 onMoveLogoAt={onMoveLogoAt}
+                onReorderLogo={onReorderLogo}
                 focusSection={focusSection}
                 onFocusSectionHandled={() => setFocusSection(null)}
               />

@@ -27,14 +27,22 @@ const DEFAULT_SETTINGS = {
   enhancementFilter: "smart", // "smart" | "manual" | "vivid" | "bw"
   enhancementIntensity: 60, // used internally by Smart Enhance; no UI slider anymore
   customPresets: [], // user-saved manual presets: [{ name, values: { manualHue, manualSaturation, ... } }]
-  manualHue: 0, // -180..180 degrees
-  manualSaturation: 0, // -100..100
+  manualTemperature: 0, // -100..100 (White Balance: blue <-> amber)
+  manualTint: 0, // -100..100 (White Balance: green <-> magenta)
   manualBrightness: 0, // -100..100 (Value)
   manualContrast: 0, // -100..100
-  manualExposure: 0, // -100..100
   manualHighlights: 0, // -100..100
   manualShadows: 0, // -100..100
-  manualSharpen: 0, // 0..100
+  manualWhites: 0, // -100..100
+  manualBlacks: 0, // -100..100
+  manualHue: 0, // -180..180 degrees
+  manualVibrance: 0, // -100..100
+  manualSaturation: 0, // -100..100
+  manualInvert: false,
+  manualSharpen: 0, // 0..100 (Sharpness)
+  manualClarity: 0, // -100..100
+  manualVignette: 0, // -100..100
+  manualExposure: 0, // -100..100 (kept for backward compatibility; no longer exposed in the UI)
   jpegQuality: 97,
   filenameSuffix: "", // free-text appended before the extension, e.g. "_edited"
   collisionStrategy: "rename" // "rename" | "overwrite" | "skip"

@@ -23,37 +23,34 @@ export default function LabeledSlider({ label, value, min, max, step = 1, unit =
 
   return (
     <div className="mb-4">
-      <div className="mb-1.5 flex items-center justify-between">
-        <label className="text-xs font-medium text-slate-300">{label}</label>
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            min={min}
-            max={max}
-            step={step}
-            value={textValue}
-            onChange={(e) => setTextValue(e.target.value)}
-            onBlur={(e) => commit(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                commit(e.target.value);
-                e.currentTarget.blur();
-              }
-            }}
-            className="w-14 rounded-md border border-base-700 bg-base-900 px-1.5 py-0.5 text-right text-xs font-semibold text-accent focus:border-accent focus:outline-none"
-          />
-          <span className="text-xs font-semibold text-accent">{unit}</span>
-        </div>
+      <label className="mb-1.5 block text-xs font-medium text-slate-300">{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-full flex-1"
+        />
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={textValue}
+          onChange={(e) => setTextValue(e.target.value)}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              commit(e.target.value);
+              e.currentTarget.blur();
+            }
+          }}
+          className="w-14 flex-shrink-0 rounded-md border border-base-700 bg-base-900 px-1.5 py-0.5 text-center text-xs font-semibold text-accent focus:border-accent focus:outline-none"
+        />
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full"
-      />
     </div>
   );
 }

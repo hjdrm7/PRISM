@@ -78,3 +78,21 @@ input[type="number"] {
 .animate-progress-indeterminate {
   animation: progress-indeterminate 1.1s ease-in-out infinite;
 }
+
+/* Loading spinner for the PRISM logo shown while a batch is processing:
+   a combined 3D flip (around the Y axis, so it reveals/hides like a coin)
+   and a full 2D spin, looping together. transform-style + perspective on
+   the parent give the flip actual depth instead of just squashing flat. */
+@keyframes logo-flip-spin {
+  0% {
+    transform: rotate(0deg) rotateY(0deg);
+  }
+  100% {
+    transform: rotate(360deg) rotateY(720deg);
+  }
+}
+.animate-logo-flip {
+  animation: logo-flip-spin 2.2s linear infinite;
+  transform-style: preserve-3d;
+  perspective: 300px;
+}
