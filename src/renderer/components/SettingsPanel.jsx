@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import LabeledSlider from "./LabeledSlider.jsx";
 import AngleDial from "./AngleDial.jsx";
-import { Layers, Sparkles, Download, X, Sun, Droplet, Wand2, RotateCcw, Save, Trash2 } from "lucide-react";
+import { Layers, Sparkles, Download, X, Sun, Droplet, Wand2, RotateCcw, Save, Trash2, ChevronUp, ChevronDown, BookMarked } from "lucide-react";
 
 const MAX_LOGOS = 5;
 
@@ -33,12 +33,30 @@ const FILTER_PRESETS = {
   }
 };
 
-function LogoRow({ index, value, onChoose, onRemove }) {
+function LogoRow({ index, value, onChoose, onRemove, onMoveUp, onMoveDown, canMoveUp, canMoveDown }) {
   const filename = value ? value.split(/[/\\]/).pop() : "";
   return (
     <div className="mb-3">
       <label className="mb-1.5 block text-xs font-medium text-slate-300">Logo {index + 1}</label>
       <div className="flex items-center gap-2">
+        <div className="flex flex-shrink-0 flex-col">
+          <button
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            title="Move up"
+            className="rounded-t-md border border-b-0 border-base-700 px-1 py-0.5 text-base-500 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-base-500"
+          >
+            <ChevronUp className="h-3 w-3" />
+          </button>
+          <button
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            title="Move down"
+            className="rounded-b-md border border-base-700 px-1 py-0.5 text-base-500 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-base-500"
+          >
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </div>
         <button
           onClick={onChoose}
           className="flex-1 truncate rounded-lg border border-base-700 bg-base-900 px-3 py-2 text-left text-xs text-slate-300 hover:border-accent/50"
@@ -105,16 +123,21 @@ function SwitchPill({ on, onToggle, label }) {
 // stays compact and content doesn't stack multiple panels at once. An
 // icon + bottom-border indicator makes the active section unambiguous
 // at a glance, rather than relying on a subtle background tint alone.
-function SectionTab({ title, icon: Icon, badge, active, onClick }) {
+function SectionTab({ title, icon: Icon, badge, active, onClick, pulse, dot }) {
   return (
     <button
       onClick={onClick}
       className={`relative flex items-center gap-1.5 whitespace-nowrap pb-2.5 pr-1 pt-1 text-left transition-colors ${
         active ? "text-accent" : "text-base-500 hover:text-slate-300"
-      }`}
+      } ${pulse ? "animate-pulse" : ""}`}
       aria-expanded={active}
     >
-      <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+      <span className="relative">
+        <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+        {dot && (
+          <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-accent" title="Configured" />
+        )}
+      </span>
       <h3 className="text-xs font-semibold uppercase tracking-wide">{title}</h3>
       {badge && (
         <span
@@ -142,7 +165,17 @@ function SliderGroupHead({ icon: Icon, label }) {
   );
 }
 
-export default function SettingsPanel({ config, setConfig, onChooseOutputFolder, onAddLogo, onChooseLogoAt, onRemoveLogoAt }) {
+export default function SettingsPanel({
+  config,
+  setConfig,
+  onChooseOutputFolder,
+  onAddLogo,
+  onChooseLogoAt,
+  onRemoveLogoAt,
+  onMoveLogoAt,
+  focusSection,
+  onFocusSectionHandled
+}) {
   const set = (key) => (val) => setConfig((c) => ({ ...c, [key]: val }));
   const logos = config.logos || [];
 
@@ -153,20 +186,46 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
   const [activeSection, setActiveSection] = useState("watermarks");
   const toggleSection = (id) => setActiveSection((cur) => (cur === id ? null : id));
 
+  // When App.jsx points us at a section after a validation error (e.g.
+  // "select an output folder" before starting a batch), jump the tab row
+  // there and briefly pulse it so the person's eye lands on the right
+  // control instead of just reading the toast and looking around.
+  const [pulseSection, setPulseSection] = useState(null);
+  useEffect(() => {
+    if (!focusSection) return;
+    setActiveSection(focusSection);
+    setPulseSection(focusSection);
+    const timer = setTimeout(() => setPulseSection(null), 1200);
+    onFocusSectionHandled?.();
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSection]);
+
   // Shadow/outline options can be collapsed independently of their On/Off
   // toggle, so turning an effect on doesn't force its panel to stay open —
   // the person can hide the options while leaving the effect enabled.
   const [shadowExpanded, setShadowExpanded] = useState(true);
   const [outlineExpanded, setOutlineExpanded] = useState(true);
 
-  // Presets row (Vivid/BW plus any user-saved presets) is collapsed by
-  // default so the enhancement tab leads with the mode/action row, not a
-  // wall of preset chips. "Save as Preset" opens a small inline name
-  // field rather than a native prompt() dialog, so it matches the rest
-  // of the app's styling.
-  const [presetsOpen, setPresetsOpen] = useState(false);
+  // Presets row (Vivid/BW plus any user-saved presets) gets its own boxed,
+  // accent-tinted container and starts open, since presets are a primary
+  // way to apply a look rather than a secondary/advanced option.
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetNameDraft, setPresetNameDraft] = useState("");
+  // Tracks which saved preset (by name) was most recently applied, purely
+  // so the Presets row can highlight it like Vivid/BW/Smart highlight
+  // themselves — this is a session-only convenience, not persisted.
+  const [activeCustomPreset, setActiveCustomPreset] = useState(null);
+
+  // Which of the three enhancement views (Smart / Presets / Manual) is
+  // showing. Distinct from config.enhancementFilter/enhancementMode —
+  // those describe what the processing pipeline actually does, this is
+  // purely "what's on screen right now". Until the person clicks a tab
+  // themselves, it tracks the underlying filter so the panel opens on
+  // whatever's actually active; once they've clicked, it stays put (e.g.
+  // browsing Presets doesn't get yanked back to Manual just because a
+  // slider underneath hasn't changed).
+  const [enhTab, setEnhTab] = useState(null);
 
   return (
     <div className="relative">
@@ -177,18 +236,22 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
           badge={`${logos.length}/${MAX_LOGOS}`}
           active={activeSection === "watermarks"}
           onClick={() => toggleSection("watermarks")}
+          pulse={pulseSection === "watermarks"}
         />
         <SectionTab
           title="Enhancement"
           icon={Sparkles}
           active={activeSection === "enhancement"}
           onClick={() => toggleSection("enhancement")}
+          pulse={pulseSection === "enhancement"}
         />
         <SectionTab
           title="Output"
           icon={Download}
           active={activeSection === "output"}
           onClick={() => toggleSection("output")}
+          pulse={pulseSection === "output"}
+          dot={!!config.outputFolder}
         />
       </div>
 
@@ -213,6 +276,10 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
             value={logoPath}
             onChoose={() => onChooseLogoAt(index)}
             onRemove={() => onRemoveLogoAt(index)}
+            onMoveUp={() => onMoveLogoAt(index, -1)}
+            onMoveDown={() => onMoveLogoAt(index, 1)}
+            canMoveUp={index > 0}
+            canMoveDown={index < logos.length - 1}
           />
         ))}
 
@@ -428,6 +495,7 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
           const customPresets = config.customPresets || [];
 
           const applyFilter = (key) => {
+            setActiveCustomPreset(null);
             setConfig((c) => ({
               ...c,
               enhancementFilter: key,
@@ -454,6 +522,7 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
           };
 
           const applyCustomPreset = (preset) => {
+            setActiveCustomPreset(preset.name);
             setConfig((c) => ({
               ...c,
               enhancementFilter: "manual",
@@ -471,6 +540,7 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
 
           const currentFilter = config.enhancementFilter || "smart";
           const isSmart = currentFilter === "smart";
+          const effectiveTab = enhTab || (isSmart ? "smart" : "manual");
 
           const openSavePreset = () => {
             setPresetNameDraft("");
@@ -507,46 +577,38 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
             }));
           };
 
+          const MODE_TABS = [
+            { key: "smart", label: "Smart Enhance", icon: Sparkles },
+            { key: "presets", label: "Presets", icon: BookMarked },
+            { key: "manual", label: "Manual", icon: Wand2 }
+          ];
+
+          const selectTab = (key) => {
+            setEnhTab(key);
+            // Smart and Manual are actual pipeline modes, so picking their
+            // tab also switches processing — Presets is just a browser/
+            // manager for looks and doesn't change anything by itself
+            // until a specific preset inside it is clicked.
+            if (key === "smart" || key === "manual") applyFilter(key);
+          };
+
           return (
             <>
-              <div className="mb-3 flex gap-1.5">
-                <button
-                  onClick={() => applyFilter("smart")}
-                  className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-                    currentFilter === "smart"
-                      ? "border-accent bg-accent/15 text-accent"
-                      : "border-base-700 text-slate-400 hover:border-base-600"
-                  }`}
-                >
-                  Smart Enhance
-                </button>
-                <button
-                  onClick={() => applyFilter("manual")}
-                  className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-                    currentFilter === "manual"
-                      ? "border-accent bg-accent/15 text-accent"
-                      : "border-base-700 text-slate-400 hover:border-base-600"
-                  }`}
-                >
-                  Manual
-                </button>
-                <button
-                  onClick={openSavePreset}
-                  disabled={isSmart}
-                  title={isSmart ? "Switch to Manual to save current adjustments as a preset" : "Save current adjustments as a preset"}
-                  className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1.5 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Save className="h-3 w-3" strokeWidth={2.25} />
-                  Save as Preset
-                </button>
-                <button
-                  onClick={resetManual}
-                  title="Reset tone, color, and detail adjustments"
-                  className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1.5 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
-                >
-                  <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
-                  Reset
-                </button>
+              <div className="mb-4 grid grid-cols-3 gap-1.5 overflow-hidden rounded-xl2 border border-base-800 bg-base-950 p-1">
+                {MODE_TABS.map(({ key, label, icon: Icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => selectTab(key)}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold transition-colors ${
+                      effectiveTab === key
+                        ? "bg-accent/15 text-accent"
+                        : "text-slate-400 hover:bg-base-800 hover:text-slate-200"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+                    {label}
+                  </button>
+                ))}
               </div>
 
               {savingPreset && (
@@ -590,125 +652,173 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
                 </div>
               )}
 
-              <button
-                onClick={() => setPresetsOpen((o) => !o)}
-                className="mb-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-base-500 hover:text-slate-300"
-                aria-expanded={presetsOpen}
-              >
-                Presets
-                <Chevron open={presetsOpen} />
-              </button>
+              {effectiveTab === "smart" && (
+                <div className="flex flex-col items-center gap-2 rounded-xl2 border border-base-800 px-4 py-8 text-center">
+                  <Sparkles className="h-6 w-6 text-accent" strokeWidth={1.75} />
+                  <p className="text-sm font-semibold text-slate-100">PRISM decides, per photo</p>
+                  <p className="max-w-[22rem] text-xs text-base-500">
+                    Auto-exposure, white balance, local contrast, noise reduction, saturation, and sharpening are all
+                    tuned automatically for each image — there's nothing to adjust here. Switch to Presets for a
+                    one-click look, or Manual to fine-tune every value by hand.
+                  </p>
+                </div>
+              )}
 
-              {presetsOpen && (
-                <div className="mb-3 flex flex-wrap gap-1.5">
-                  <button
-                    onClick={() => applyFilter("vivid")}
-                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                      currentFilter === "vivid"
-                        ? "border-accent bg-accent/15 text-accent"
-                        : "border-base-700 text-slate-400 hover:border-base-600"
-                    }`}
-                  >
-                    Vivid
-                  </button>
-                  <button
-                    onClick={() => applyFilter("bw")}
-                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                      currentFilter === "bw"
-                        ? "border-accent bg-accent/15 text-accent"
-                        : "border-base-700 text-slate-400 hover:border-base-600"
-                    }`}
-                  >
-                    BW
-                  </button>
-                  {customPresets.map((preset, index) => (
-                    <div
-                      key={`${preset.name}-${index}`}
-                      className="group flex items-center gap-0.5 rounded-lg border border-base-700 pl-2.5 pr-1 py-1 text-xs font-medium text-slate-400 hover:border-base-600"
+              {effectiveTab === "presets" && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs text-base-500">Apply a look, or save your current Manual adjustments as a new one.</p>
+                    <button
+                      onClick={openSavePreset}
+                      disabled={isSmart}
+                      title={isSmart ? "Switch to Manual to save current adjustments as a preset" : "Save current adjustments as a preset"}
+                      className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      <button onClick={() => applyCustomPreset(preset)} className="py-0.5 hover:text-slate-200" title={preset.name}>
-                        {preset.name}
-                      </button>
-                      <button
-                        onClick={() => removeCustomPreset(index)}
-                        title="Delete preset"
-                        className="flex-shrink-0 rounded-md p-1 text-base-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                      <Save className="h-3 w-3" strokeWidth={2.25} />
+                      Save Current
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 rounded-xl2 border border-base-800 p-3">
+                    <button
+                      onClick={() => applyFilter("vivid")}
+                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        currentFilter === "vivid"
+                          ? "border-accent bg-accent/15 text-accent"
+                          : "border-base-700 text-slate-400 hover:border-base-600"
+                      }`}
+                    >
+                      Vivid
+                    </button>
+                    <button
+                      onClick={() => applyFilter("bw")}
+                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        currentFilter === "bw"
+                          ? "border-accent bg-accent/15 text-accent"
+                          : "border-base-700 text-slate-400 hover:border-base-600"
+                      }`}
+                    >
+                      BW
+                    </button>
+                    {customPresets.map((preset, index) => (
+                      <div
+                        key={`${preset.name}-${index}`}
+                        className={`group flex items-center gap-0.5 rounded-lg border pl-2.5 pr-1 py-1 text-xs font-medium hover:border-base-600 ${
+                          activeCustomPreset === preset.name
+                            ? "border-accent bg-accent/15 text-accent"
+                            : "border-base-700 text-slate-400"
+                        }`}
                       >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                  {customPresets.length === 0 && (
-                    <p className="py-1 text-[11px] text-base-600">No saved presets yet.</p>
+                        <button onClick={() => applyCustomPreset(preset)} className="py-0.5 hover:text-slate-200" title={preset.name}>
+                          {preset.name}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (activeCustomPreset === preset.name) setActiveCustomPreset(null);
+                            removeCustomPreset(index);
+                          }}
+                          title="Delete preset"
+                          className="flex-shrink-0 rounded-md p-1 text-base-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {customPresets.length === 0 && (
+                      <p className="py-1 text-[11px] text-base-600">No saved presets yet — adjust sliders in Manual, then "Save Current".</p>
+                    )}
+                  </div>
+
+                  {(currentFilter === "vivid" || currentFilter === "bw" || activeCustomPreset) && (
+                    <p className="mt-2 text-[11px] text-base-500">
+                      Applied — switch to Manual to fine-tune these values further.
+                    </p>
                   )}
                 </div>
               )}
 
-              {isSmart && (
-                <p className="mb-3 text-[11px] text-base-500">
-                  Smart Enhance makes image-specific adjustments automatically. Pick Manual, Vivid, or BW to fine-tune by hand.
-                </p>
+              {effectiveTab === "manual" && (
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-xs text-base-500">Tone, color, and detail — adjust freely.</p>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={openSavePreset}
+                        className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+                      >
+                        <Save className="h-3 w-3" strokeWidth={2.25} />
+                        Save as Preset
+                      </button>
+                      <button
+                        onClick={resetManual}
+                        title="Reset tone, color, and detail adjustments"
+                        className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+                      >
+                        <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <SliderGroupHead icon={Sun} label="Tone" />
+                  <LabeledSlider
+                    label="Brightness (Value)"
+                    value={config.manualBrightness ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualBrightness")}
+                  />
+                  <LabeledSlider
+                    label="Contrast"
+                    value={config.manualContrast ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualContrast")}
+                  />
+                  <LabeledSlider
+                    label="Exposure"
+                    value={config.manualExposure ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualExposure")}
+                  />
+                  <LabeledSlider
+                    label="Highlights"
+                    value={config.manualHighlights ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualHighlights")}
+                  />
+                  <LabeledSlider
+                    label="Shadows"
+                    value={config.manualShadows ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualShadows")}
+                  />
+
+                  <div className="my-4 h-px bg-base-800" />
+                  <SliderGroupHead icon={Droplet} label="Color" />
+                  <LabeledSlider label="Hue" value={config.manualHue ?? 0} min={-180} max={180} unit="°" onChange={set("manualHue")} />
+                  <LabeledSlider
+                    label="Saturation"
+                    value={config.manualSaturation ?? 0}
+                    min={-100}
+                    max={100}
+                    onChange={set("manualSaturation")}
+                  />
+
+                  <div className="my-4 h-px bg-base-800" />
+                  <SliderGroupHead icon={Wand2} label="Detail" />
+                  <LabeledSlider
+                    label="Sharpen"
+                    value={config.manualSharpen ?? 0}
+                    min={0}
+                    max={100}
+                    onChange={set("manualSharpen")}
+                  />
+                </div>
               )}
-
-              <div className={`transition-opacity ${isSmart ? "pointer-events-none opacity-40" : ""}`} aria-disabled={isSmart}>
-                <SliderGroupHead icon={Sun} label="Tone" />
-                <LabeledSlider
-                  label="Brightness (Value)"
-                  value={config.manualBrightness ?? 0}
-                  min={-100}
-                  max={100}
-                  onChange={set("manualBrightness")}
-                />
-                <LabeledSlider
-                  label="Contrast"
-                  value={config.manualContrast ?? 0}
-                  min={-100}
-                  max={100}
-                  onChange={set("manualContrast")}
-                />
-                <LabeledSlider
-                  label="Exposure"
-                  value={config.manualExposure ?? 0}
-                  min={-100}
-                  max={100}
-                  onChange={set("manualExposure")}
-                />
-                <LabeledSlider
-                  label="Highlights"
-                  value={config.manualHighlights ?? 0}
-                  min={-100}
-                  max={100}
-                  onChange={set("manualHighlights")}
-                />
-                <LabeledSlider
-                  label="Shadows"
-                  value={config.manualShadows ?? 0}
-                  min={-100}
-                  max={100}
-                  onChange={set("manualShadows")}
-                />
-
-                <div className="my-4 h-px bg-base-800" />
-                <SliderGroupHead icon={Droplet} label="Color" />
-                <LabeledSlider label="Hue" value={config.manualHue ?? 0} min={-180} max={180} unit="°" onChange={set("manualHue")} />
-                <LabeledSlider
-                  label="Saturation"
-                  value={config.manualSaturation ?? 0}
-                  min={-100}
-                  max={100}
-                  onChange={set("manualSaturation")}
-                />
-
-                <div className="my-4 h-px bg-base-800" />
-                <SliderGroupHead icon={Wand2} label="Detail" />
-                <LabeledSlider
-                  label="Sharpen"
-                  value={config.manualSharpen ?? 0}
-                  min={0}
-                  max={100}
-                  onChange={set("manualSharpen")}
-                />
-              </div>
             </>
           );
         })()}

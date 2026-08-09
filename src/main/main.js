@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -171,4 +171,14 @@ ipcMain.handle("processing:start-batch", async (evt, { images, config }) => {
 ipcMain.handle("processing:cancel-batch", async () => {
   if (activeBatchController) activeBatchController.cancelled = true;
   return true;
+});
+
+// ---------------------------------------------------------------------------
+// IPC: reveal the output folder in the OS file manager after a batch finishes
+// ---------------------------------------------------------------------------
+
+ipcMain.handle("shell:open-path", async (_evt, targetPath) => {
+  if (!targetPath) return false;
+  const err = await shell.openPath(targetPath);
+  return !err;
 });

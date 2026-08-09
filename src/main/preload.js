@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("api", {
 
   startBatch: (images, config) => ipcRenderer.invoke("processing:start-batch", { images, config }),
   cancelBatch: () => ipcRenderer.invoke("processing:cancel-batch"),
+  openOutputFolder: (folderPath) => ipcRenderer.invoke("shell:open-path", folderPath),
 
   onProgress: (callback) => {
     const listener = (_evt, payload) => callback(payload);

@@ -57,6 +57,22 @@ export default function App() {
 
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [focusSection, setFocusSection] = useState(null); // briefly points SettingsPanel at a tab after a validation error
+
+  // Keyboard shortcuts: [ / ] toggle the left/right panels, matching the
+  // chevron buttons already in the UI. Ignored while typing in a text
+  // field, number field, or color picker so it doesn't fire mid-edit
+  // (e.g. typing a filename suffix that happens to contain "[").
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
+      if (e.key === "[") setLeftPanelOpen((o) => !o);
+      if (e.key === "]") setRightPanelOpen((o) => !o);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const previewDebounce = useRef(null);
   // Preview requests are serialized: only one runs against the backend at a
@@ -232,6 +248,21 @@ export default function App() {
     });
   }, []);
 
+  // Reorders a logo one slot toward the front (-1) or back (+1) of the
+  // list. List order determines stacking order relative to the chosen
+  // corner (see processor.js applyLogos), so this is the only way to
+  // change which logo sits closest to the edge without removing and
+  // re-adding it.
+  const onMoveLogoAt = useCallback((index, direction) => {
+    setConfig((c) => {
+      const logos = [...(c.logos || [])];
+      const target = index + direction;
+      if (target < 0 || target >= logos.length) return c;
+      [logos[index], logos[target]] = [logos[target], logos[index]];
+      return { ...c, logos };
+    });
+  }, []);
+
   // Runs a single preview job against the backend. If another job is
   // already in flight, we stash this one as "pending" and return — when
   // the in-flight job finishes it will pick up only the latest pending
@@ -323,15 +354,19 @@ export default function App() {
   ]);
 
   const validate = () => {
-    if (images.length === 0) return "Please add at least one image to process.";
-    if (!config.outputFolder) return "Please select an output folder.";
+    if (images.length === 0) return { message: "Please add at least one image to process.", section: null };
+    if (!config.outputFolder) return { message: "Please select an output folder.", section: "output" };
     return null;
   };
 
   const startProcessing = async () => {
     const validationError = validate();
     if (validationError) {
-      showToast("error", validationError);
+      showToast("error", validationError.message);
+      if (validationError.section) {
+        setRightPanelOpen(true);
+        setFocusSection(validationError.section);
+      }
       return;
     }
     dismissToast();
@@ -407,6 +442,18 @@ export default function App() {
     setStatus("Cancelling…");
     await window.api.cancelBatch();
   };
+
+  const openOutputFolder = useCallback(() => {
+    if (config.outputFolder) window.api.openOutputFolder(config.outputFolder);
+  }, [config.outputFolder]);
+
+  const copyErrors = useCallback(() => {
+    if (!summary?.errors?.length) return;
+    navigator.clipboard.writeText(summary.errors.join("\n")).then(
+      () => showToast("success", "Errors copied to clipboard."),
+      () => showToast("error", "Couldn't copy to clipboard.")
+    );
+  }, [summary, showToast]);
 
   return (
     <div className="relative flex h-full w-full flex-col bg-base-950">
@@ -510,15 +557,25 @@ export default function App() {
                           : "Finished with issues"}
                       </p>
                       <p className="mb-4 text-xs text-slate-400">{resultBanner.message}</p>
-                      <button
-                        onClick={() => {
-                          if (resultBannerTimer.current) clearTimeout(resultBannerTimer.current);
-                          setResultBanner(null);
-                        }}
-                        className="rounded-full border border-slate-400/70 px-7 py-2 text-xs font-semibold tracking-wide text-slate-200 transition-colors hover:border-accent hover:text-accent"
-                      >
-                        CLOSE
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {resultBanner.type === "success" && config.outputFolder && (
+                          <button
+                            onClick={openOutputFolder}
+                            className="rounded-full border border-accent/50 px-5 py-2 text-xs font-semibold tracking-wide text-accent transition-colors hover:bg-accent/15"
+                          >
+                            OPEN FOLDER
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (resultBannerTimer.current) clearTimeout(resultBannerTimer.current);
+                            setResultBanner(null);
+                          }}
+                          className="rounded-full border border-slate-400/70 px-7 py-2 text-xs font-semibold tracking-wide text-slate-200 transition-colors hover:border-accent hover:text-accent"
+                        >
+                          CLOSE
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -565,10 +622,24 @@ export default function App() {
 
           {summary && summary.errors?.length > 0 && (
             <div className="mt-4 flex-shrink-0">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-yellow-300/80">
+                  {summary.errors.length} error{summary.errors.length === 1 ? "" : "s"}
+                </span>
+                <button
+                  onClick={copyErrors}
+                  className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-yellow-300/80 hover:text-yellow-200 hover:underline"
+                >
+                  Copy all
+                </button>
+              </div>
               <div className="max-h-24 overflow-y-auto rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
                 {summary.errors.slice(0, 8).map((e, i) => (
                   <div key={i}>{e}</div>
                 ))}
+                {summary.errors.length > 8 && (
+                  <div className="mt-1 text-yellow-300/70">+ {summary.errors.length - 8} more (see "Copy all")</div>
+                )}
               </div>
             </div>
           )}
@@ -599,6 +670,9 @@ export default function App() {
                 onAddLogo={onAddLogo}
                 onChooseLogoAt={onChooseLogoAt}
                 onRemoveLogoAt={onRemoveLogoAt}
+                onMoveLogoAt={onMoveLogoAt}
+                focusSection={focusSection}
+                onFocusSectionHandled={() => setFocusSection(null)}
               />
             </div>
 
