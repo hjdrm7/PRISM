@@ -6,11 +6,13 @@
  *   - Auto: a single 0-100 `enhancementIntensity` slider scales a fixed
  *     pipeline — sharpen goes LAST, after noise reduction, so it doesn't
  *     amplify grain that denoising would otherwise smooth back out:
- *       1. Normalize (auto white-balance / levels stretch)
- *       2. CLAHE (local contrast)
- *       3. Median filter (light noise reduction)
- *       4. Saturation boost
- *       5. Sharpen (unsharp mask)
+ *       1. Auto-exposure (pulls each photo's own mean brightness toward
+ *          mid-gray — dark photos lighten, bright/blown photos darken)
+ *       2. Normalize (auto white-balance / levels stretch)
+ *       3. CLAHE (local contrast)
+ *       4. Median filter (light noise reduction)
+ *       5. Saturation boost
+ *       6. Sharpen (unsharp mask)
  *   - Manual: independent Hue, Saturation, Brightness/Value, Contrast,
  *     Exposure, Highlights, Shadows, and Sharpen controls. See
  *     buildManualPipeline / buildToneCurveLUT below.
@@ -30,16 +32,37 @@ function clampIntensity(intensity) {
  * Build a sharp pipeline with the "Auto" enhancement steps applied,
  * scaled by a single 0-100 intensity value.
  */
-function buildAutoPipeline(image, intensity) {
+async function buildAutoPipeline(image, intensity) {
   const factor = clampIntensity(intensity);
   if (factor === 0) return image;
 
   let pipeline = image;
 
-  // 1. Normalize — auto-levels stretch, a reasonable stand-in for white balance.
+  // 0. Auto-exposure — measure this specific photo's own average brightness
+  // and pull it toward a mid-gray target, so dark photos lighten and
+  // bright/washed-out photos come back down, instead of applying the same
+  // fixed brightness to every image regardless of how it was shot.
+  const stats = await image.stats();
+  const rgbChannels = stats.channels.slice(0, 3);
+  const meanLuminance =
+    rgbChannels.length >= 3
+      ? 0.2126 * rgbChannels[0].mean + 0.7152 * rgbChannels[1].mean + 0.0722 * rgbChannels[2].mean
+      : rgbChannels[0].mean;
+
+  const TARGET_MEAN = 128; // mid-gray target for a "well exposed" photo
+  const MAX_SHIFT = 45; // cap how hard we'll push an extremely under/over-exposed photo
+  const rawDelta = TARGET_MEAN - meanLuminance;
+  const clampedDelta = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, rawDelta));
+  const exposureShift = clampedDelta * factor; // scaled by the intensity slider
+
+  if (Math.abs(exposureShift) > 0.5) {
+    pipeline = pipeline.linear(1, exposureShift);
+  }
+
+  // 2. Normalize — auto-levels stretch, a reasonable stand-in for white balance.
   pipeline = pipeline.normalise({ lower: 1, upper: 99 });
 
-  // 2. CLAHE — local contrast enhancement. Larger window = subtler effect.
+  // 3. CLAHE — local contrast enhancement. Larger window = subtler effect.
   const claheWidth = Math.round(64 - 32 * factor); // 64 (subtle) down to 32 (stronger)
   pipeline = pipeline.clahe({
     width: Math.max(8, claheWidth),
@@ -47,17 +70,17 @@ function buildAutoPipeline(image, intensity) {
     maxSlope: 1 + Math.round(2 * factor)
   });
 
-  // 3. Median filter — light noise reduction. Only apply above a threshold,
+  // 4. Median filter — light noise reduction. Only apply above a threshold,
   //    since a median filter at low intensity does more harm than good.
   if (factor > 0.15) {
     pipeline = pipeline.median(3);
   }
 
-  // 4. Saturation boost — up to +35%.
+  // 5. Saturation boost — up to +35%.
   const saturation = 1 + 0.35 * factor;
   pipeline = pipeline.modulate({ saturation });
 
-  // 5. Sharpen — mild unsharp mask, scaled by intensity.
+  // 6. Sharpen — mild unsharp mask, scaled by intensity.
   const sharpenSigma = 0.8 + 1.2 * factor;
   const sharpenM1 = 0.3 + 0.7 * factor;
   pipeline = pipeline.sharpen({ sigma: sharpenSigma, m1: sharpenM1, m2: 0.2 });
@@ -546,10 +569,21 @@ async function processPreview(imagePath, config) {
 
 /**
  * Process one image fully and save it, returning a status record.
+ * If `controller` is cancelled, we skip the (slow) disk write even if the
+ * enhancement pipeline for this image already ran — this is what makes
+ * Stop actually take effect promptly instead of only between images. Since
+ * every image in a batch that's no bigger than the worker pool gets
+ * claimed by a worker in the same instant, checking cancellation only
+ * between images would otherwise never fire on typical small batches.
  */
-async function processOne(imagePath, config) {
+async function processOne(imagePath, config, controller) {
   try {
     const { pipeline } = await buildProcessedImage(imagePath, config);
+
+    if (controller && controller.cancelled) {
+      return { imagePath, status: "cancelled" };
+    }
+
     const filename = resolveOutputFilename(path.basename(imagePath), config.outputFormat, config.filenameSuffix);
     const outputPath = resolveOutputPath(config.outputFolder, filename, config.collisionStrategy);
 
@@ -588,11 +622,20 @@ async function processBatch(images, config, concurrency, onProgress, controller)
       cursor += 1;
       const imagePath = images[idx];
 
-      const result = await processOne(imagePath, config);
+      // Ping immediately when a worker claims a file, not just when it
+      // finishes — without this, a batch small enough to be fully
+      // dispatched to the worker pool in one go (very common: every batch
+      // up to `concurrency` images) sends no progress update at all until
+      // everything wraps up near-simultaneously, so the bar just sits at
+      // 0% and then jumps to 100%. This "started" ping gives the renderer
+      // something to show the moment work actually begins on each image.
+      onProgress(doneCount, total, path.basename(imagePath), "processing");
+
+      const result = await processOne(imagePath, config, controller);
       doneCount += 1;
 
       if (result.status === "success") succeeded += 1;
-      else if (result.status === "skipped") skipped += 1;
+      else if (result.status === "skipped" || result.status === "cancelled") skipped += 1;
       else {
         failed += 1;
         errors.push(`${path.basename(imagePath)}: ${result.error}`);

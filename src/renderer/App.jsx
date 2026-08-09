@@ -46,11 +46,12 @@ export default function App() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, filename: "" });
   const [status, setStatus] = useState("Ready.");
   const [summary, setSummary] = useState(null);
   const [toast, setToast] = useState(null); // { type: "error", message } — validation/preview errors only
-  const [resultBanner, setResultBanner] = useState(null); // { type: "success" | "error", message } — shown in the overlay card after a batch finishes
+  const [resultBanner, setResultBanner] = useState(null); // { type: "success" | "error" | "cancelled", message } — shown in the overlay card after a batch finishes
 
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
@@ -99,11 +100,17 @@ export default function App() {
     window.api.saveSettings(config);
   }, [config]);
 
-  // Progress listener
+  // Progress listener — fires both when a worker starts a file ("processing")
+  // and when it finishes (success/failed/skipped/cancelled), so the overlay
+  // can show live activity between completions, not just jump at each done tick.
   useEffect(() => {
-    const unsubscribe = window.api.onProgress(({ done, total, filename }) => {
+    const unsubscribe = window.api.onProgress(({ done, total, filename, status }) => {
       setProgress({ done, total, filename });
-      setStatus(`Processing ${done}/${total}: ${filename}`);
+      setStatus(
+        status === "processing"
+          ? `Processing ${done + 1}/${total}: ${filename}`
+          : `Processing ${done}/${total}: ${filename}`
+      );
     });
     return unsubscribe;
   }, []);
@@ -323,6 +330,7 @@ export default function App() {
     dismissToast();
     setSummary(null);
     setResultBanner(null);
+    setCancelRequested(false);
     if (resultBannerTimer.current) clearTimeout(resultBannerTimer.current);
     setIsProcessing(true);
     setProgress({ done: 0, total: images.length, filename: "" });
@@ -339,6 +347,7 @@ export default function App() {
     const finished = result.succeeded + result.failed + result.skipped;
     setProgress({ done: finished, total: result.total, filename: "" });
     setIsProcessing(false);
+    setCancelRequested(false);
     setSummary(result);
     setStatus(
       result.cancelled
@@ -346,9 +355,21 @@ export default function App() {
         : `Done. ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`
     );
 
-    if (!result.cancelled) {
-      // Morph the same overlay card into a result state instead of popping
-      // a separate success toast — it stays put briefly, then fades away.
+    // Morph the same overlay card into a result state instead of popping a
+    // separate toast — it stays put briefly, then fades away. This always
+    // fires, including on cancel: a batch that's small enough for every
+    // image to already be dispatched to a worker finishes anyway even
+    // after Stop is clicked, so without this the run would just complete
+    // silently with no confirmation that anything happened.
+    if (result.cancelled) {
+      setResultBanner({
+        type: "cancelled",
+        message:
+          finished > 0
+            ? `Stopped after ${result.succeeded} of ${result.total} image${result.total === 1 ? "" : "s"}.`
+            : "Stopped before any images were processed."
+      });
+    } else {
       setResultBanner({
         type: result.failed > 0 ? "error" : "success",
         message:
@@ -360,8 +381,8 @@ export default function App() {
                 result.skipped ? ` (${result.skipped} skipped)` : ""
               }.`
       });
-      resultBannerTimer.current = setTimeout(() => setResultBanner(null), 4000);
     }
+    resultBannerTimer.current = setTimeout(() => setResultBanner(null), 4000);
 
     // Clear the queue once processing actually finishes, so the next run
     // starts clean. If the user cancelled partway through, leave the queue
@@ -373,6 +394,7 @@ export default function App() {
   };
 
   const cancelProcessing = async () => {
+    setCancelRequested(true);
     setStatus("Cancelling…");
     await window.api.cancelBatch();
   };
@@ -463,9 +485,15 @@ export default function App() {
                 <div className="flex w-64 flex-col items-center gap-1 rounded-2xl border border-base-700 bg-base-900/95 px-6 py-7 text-center shadow-2xl">
                   {resultBanner ? (
                     <>
-                      <span className="mb-2 text-3xl">{resultBanner.type === "success" ? "✅" : "⚠️"}</span>
+                      <span className="mb-2 text-3xl">
+                        {resultBanner.type === "success" ? "✅" : resultBanner.type === "cancelled" ? "⏹️" : "⚠️"}
+                      </span>
                       <p className="text-sm font-semibold text-slate-100">
-                        {resultBanner.type === "success" ? "Done!" : "Finished with issues"}
+                        {resultBanner.type === "success"
+                          ? "Done!"
+                          : resultBanner.type === "cancelled"
+                          ? "Cancelled"
+                          : "Finished with issues"}
                       </p>
                       <p className="mb-4 text-xs text-slate-400">{resultBanner.message}</p>
                       <button
@@ -481,14 +509,18 @@ export default function App() {
                   ) : (
                     <>
                       <span className="mb-2 text-3xl">🆙</span>
-                      <p className="text-sm font-semibold text-slate-100">Hold on…</p>
+                      <p className="text-sm font-semibold text-slate-100">{cancelRequested ? "Cancelling…" : "Hold on…"}</p>
                       {progress.total >= 2 && (
                         <p className="mt-1 text-sm font-semibold text-slate-200">
                           Image {Math.min(progress.done + 1, progress.total)} of {progress.total}
                         </p>
                       )}
                       <p className="text-xs text-slate-400">
-                        {progress.total ? progress.filename || "Doing the PRISM magic…" : "Doing the PRISM magic…"}
+                        {cancelRequested
+                          ? "Finishing the current image, then stopping…"
+                          : progress.total
+                          ? progress.filename || "Doing the PRISM magic…"
+                          : "Doing the PRISM magic…"}
                       </p>
                       {progress.total > 0 && (
                         <>
@@ -505,7 +537,8 @@ export default function App() {
                       )}
                       <button
                         onClick={cancelProcessing}
-                        className="mt-3 rounded-full border border-slate-400/70 px-7 py-2 text-xs font-semibold tracking-wide text-slate-200 transition-colors hover:border-red-400 hover:text-red-300"
+                        disabled={cancelRequested}
+                        className="mt-3 rounded-full border border-slate-400/70 px-7 py-2 text-xs font-semibold tracking-wide text-slate-200 transition-colors hover:border-red-400 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         STOP
                       </button>
