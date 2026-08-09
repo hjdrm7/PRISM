@@ -48,29 +48,36 @@ function Chevron({ open }) {
   );
 }
 
-function Section({ title, first = false, right = null, children }) {
-  const [open, setOpen] = useState(true);
+// A single pill in the horizontal section-tab row. Sections behave like
+// tabs (one open at a time) rather than independent accordions, so the
+// row stays compact and content doesn't stack multiple panels at once.
+function SectionTab({ title, active, onClick }) {
   return (
-    <div className={first ? "pb-5" : "border-t border-base-800 py-5"}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          aria-expanded={open}
-        >
-          <Chevron open={open} />
-          <h3 className="truncate text-xs font-semibold uppercase tracking-wide text-base-500">{title}</h3>
-        </button>
-        {right}
-      </div>
-      {open && children}
-    </div>
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1.5 text-left transition-colors ${
+        active
+          ? "border-accent/40 bg-accent/15 text-accent"
+          : "border-base-700 bg-base-950 text-base-500 hover:text-slate-300"
+      }`}
+      aria-expanded={active}
+    >
+      <Chevron open={active} />
+      <h3 className="text-xs font-semibold uppercase tracking-wide">{title}</h3>
+    </button>
   );
 }
 
 export default function SettingsPanel({ config, setConfig, onChooseOutputFolder, onAddLogo, onChooseLogoAt, onRemoveLogoAt }) {
   const set = (key) => (val) => setConfig((c) => ({ ...c, [key]: val }));
   const logos = config.logos || [];
+
+  // Only one section is open at a time — the tab row stays put and the
+  // content below swaps, rather than every section's content stacking.
+  // Watermarks is open by default so the panel isn't empty on launch —
+  // the person can still collapse it or switch to another section.
+  const [activeSection, setActiveSection] = useState("watermarks");
+  const toggleSection = (id) => setActiveSection((cur) => (cur === id ? null : id));
 
   // Shadow/outline options can be collapsed independently of their On/Off
   // toggle, so turning an effect on doesn't force its panel to stay open —
@@ -80,10 +87,23 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
 
   return (
     <div>
-      <Section
-        title={`Watermarks (${logos.length}/${MAX_LOGOS})`}
-        first
-        right={
+      <div className="mb-5 flex flex-wrap items-center gap-1.5">
+        <SectionTab
+          title={`Watermarks (${logos.length}/${MAX_LOGOS})`}
+          active={activeSection === "watermarks"}
+          onClick={() => toggleSection("watermarks")}
+        />
+        <SectionTab
+          title="Enhancement"
+          active={activeSection === "enhancement"}
+          onClick={() => toggleSection("enhancement")}
+        />
+        <SectionTab title="Output" active={activeSection === "output"} onClick={() => toggleSection("output")} />
+      </div>
+
+      {activeSection === "watermarks" && (
+      <div className="pb-5">
+        <div className="mb-3 flex justify-start">
           <button
             onClick={onAddLogo}
             disabled={logos.length >= MAX_LOGOS}
@@ -91,8 +111,8 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
           >
             + Add
           </button>
-        }
-      >
+        </div>
+
         {logos.length === 0 && <p className="mb-3 text-xs text-base-500">No logos added yet.</p>}
 
         {logos.map((logoPath, index) => (
@@ -271,9 +291,11 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
             </div>
           )}
         </div>
-      </Section>
+      </div>
+      )}
 
-      <Section title="Enhancement">
+      {activeSection === "enhancement" && (
+      <div className="pb-5">
         <div className="mb-4 flex gap-1.5">
           {[
             { key: "auto", label: "Auto" },
@@ -294,13 +316,38 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
         </div>
 
         {(config.enhancementMode || "auto") === "auto" ? (
-          <LabeledSlider
-            label="Enhancement intensity"
-            value={config.enhancementIntensity}
-            min={0}
-            max={100}
-            onChange={set("enhancementIntensity")}
-          />
+          <>
+            <div className="mb-4">
+              <label className="mb-1.5 block text-xs font-medium text-slate-300">Filter</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { key: "natural", label: "Natural" },
+                  { key: "vivid", label: "Vivid" },
+                  { key: "bw", label: "B&W" }
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => set("enhancementFilter")(opt.key)}
+                    className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      (config.enhancementFilter || "natural") === opt.key
+                        ? "border-accent bg-accent/15 text-accent"
+                        : "border-base-700 text-slate-400 hover:border-base-600"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <LabeledSlider
+              label="Enhancement intensity"
+              value={config.enhancementIntensity}
+              min={0}
+              max={100}
+              onChange={set("enhancementIntensity")}
+            />
+          </>
         ) : (
           <>
             <LabeledSlider label="Hue" value={config.manualHue ?? 0} min={-180} max={180} unit="°" onChange={set("manualHue")} />
@@ -355,9 +402,11 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
             />
           </>
         )}
-      </Section>
+      </div>
+      )}
 
-      <Section title="Output">
+      {activeSection === "output" && (
+      <div className="pb-5">
         <div className="mb-4">
           <label className="mb-1.5 block text-xs font-medium text-slate-300">Output folder</label>
           <button
@@ -429,7 +478,8 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
             ))}
           </div>
         </div>
-      </Section>
+      </div>
+      )}
     </div>
   );
 }

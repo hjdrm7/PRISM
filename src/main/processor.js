@@ -29,10 +29,41 @@ function clampIntensity(intensity) {
 }
 
 /**
+ * Auto-mode filter "looks" applied on top of the base auto pipeline.
+ * Unlike the base auto steps (auto-expose, CLAHE, sharpen, ...), which
+ * scale continuously with the Intensity slider, each look is applied at
+ * a fixed, clearly visible strength whenever it's selected — Intensity
+ * still controls how strong the underlying auto-correction is, but the
+ * chosen look itself shouldn't fade to near-nothing just because
+ * Intensity happens to be set low. The only exception is a light
+ * fade-in as `factor` first crosses above 0, so there's no hard pop the
+ * instant intensity leaves zero.
+ */
+function applyAutoFilter(pipeline, filterType, factor) {
+  const strength = Math.min(1, factor / 0.25); // full look strength by ~25% intensity
+
+  switch (filterType) {
+    case "vivid":
+      // Strong extra punch on top of the base saturation/sharpen boost.
+      return pipeline
+        .modulate({ saturation: 1 + 0.45 * strength })
+        .linear(1 + 0.25 * strength, -18 * strength);
+
+    case "bw":
+      // Full grayscale once the look is at strength.
+      return pipeline.modulate({ saturation: 1 - strength });
+
+    case "natural":
+    default:
+      return pipeline;
+  }
+}
+
+/**
  * Build a sharp pipeline with the "Auto" enhancement steps applied,
  * scaled by a single 0-100 intensity value.
  */
-async function buildAutoPipeline(image, intensity) {
+async function buildAutoPipeline(image, intensity, filterType = "natural") {
   const factor = clampIntensity(intensity);
   if (factor === 0) return image;
 
@@ -84,6 +115,10 @@ async function buildAutoPipeline(image, intensity) {
   const sharpenSigma = 0.8 + 1.2 * factor;
   const sharpenM1 = 0.3 + 0.7 * factor;
   pipeline = pipeline.sharpen({ sigma: sharpenSigma, m1: sharpenM1, m2: 0.2 });
+
+  // 7. Filter "look" — a color-grade layered on top of the base auto
+  // adjustments above, scaled by the same intensity factor.
+  pipeline = applyAutoFilter(pipeline, filterType, factor);
 
   return pipeline;
 }
@@ -205,7 +240,7 @@ async function buildEnhancedPipeline(image, config) {
   if (config.enhancementMode === "manual") {
     return buildManualPipeline(image, config);
   }
-  return buildAutoPipeline(image, config.enhancementIntensity);
+  return buildAutoPipeline(image, config.enhancementIntensity, config.enhancementFilter || "natural");
 }
 
 /**

@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
   logoShadowDistancePercent: 5, // shadow throw distance, as % of logo width
   logoShadowAngle: 135, // degrees; 0 = right, 90 = down, 135 = down-right
   enhancementMode: "auto", // "auto" | "manual"
+  enhancementFilter: "natural", // "natural" | "vivid" | "bw"
   enhancementIntensity: 60,
   manualHue: 0, // -180..180 degrees
   manualSaturation: 0, // -100..100

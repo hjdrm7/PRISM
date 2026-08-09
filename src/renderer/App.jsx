@@ -24,6 +24,7 @@ const DEFAULT_CONFIG = {
   logoShadowDistancePercent: 5,
   logoShadowAngle: 135,
   enhancementMode: "auto", // "auto" | "manual"
+  enhancementFilter: "natural", // "natural" | "vivid" | "bw"
   enhancementIntensity: 60,
   manualHue: 0,
   manualSaturation: 0,
@@ -296,6 +297,7 @@ export default function App() {
   }, [
     selectedImage,
     config.enhancementMode,
+    config.enhancementFilter,
     config.enhancementIntensity,
     config.manualHue,
     config.manualSaturation,
@@ -586,20 +588,22 @@ export default function App() {
         {/* Right: settings */}
         <div
           className={`flex-shrink-0 overflow-hidden border-l border-base-800 bg-base-900 transition-all duration-200 ${
-            rightPanelOpen ? "w-72" : "w-0 border-l-0"
+            rightPanelOpen ? "w-[28rem]" : "w-0 border-l-0"
           }`}
         >
-          <div className="h-full w-72 overflow-y-auto p-4">
-            <SettingsPanel
-              config={config}
-              setConfig={setConfig}
-              onChooseOutputFolder={onChooseOutputFolder}
-              onAddLogo={onAddLogo}
-              onChooseLogoAt={onChooseLogoAt}
-              onRemoveLogoAt={onRemoveLogoAt}
-            />
+          <div className="flex h-full w-[28rem] flex-col">
+            <div className="flex-1 overflow-y-auto p-4">
+              <SettingsPanel
+                config={config}
+                setConfig={setConfig}
+                onChooseOutputFolder={onChooseOutputFolder}
+                onAddLogo={onAddLogo}
+                onChooseLogoAt={onChooseLogoAt}
+                onRemoveLogoAt={onRemoveLogoAt}
+              />
+            </div>
 
-            <div className="mt-6 space-y-2">
+            <div className="flex-shrink-0 border-t border-base-800 p-4">
               <button
                 onClick={startProcessing}
                 disabled={isProcessing}
