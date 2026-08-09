@@ -72,6 +72,12 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
   const set = (key) => (val) => setConfig((c) => ({ ...c, [key]: val }));
   const logos = config.logos || [];
 
+  // Shadow/outline options can be collapsed independently of their On/Off
+  // toggle, so turning an effect on doesn't force its panel to stay open —
+  // the person can hide the options while leaving the effect enabled.
+  const [shadowExpanded, setShadowExpanded] = useState(true);
+  const [outlineExpanded, setOutlineExpanded] = useState(true);
+
   return (
     <div>
       <Section
@@ -127,21 +133,33 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
         <LabeledSlider label="Logo opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
 
         <div className="mb-3 rounded-xl2 border border-base-800 p-3">
-          <button
-            onClick={() => set("logoShadow")(!config.logoShadow)}
-            className="flex w-full items-center justify-between"
-          >
-            <span className={`text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>Shadow</span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                config.logoShadow ? "bg-accent/15 text-accent" : "bg-base-800 text-base-500"
-              }`}
+          <div className="flex w-full items-center justify-between gap-2">
+            <button
+              onClick={() => set("logoShadow")(!config.logoShadow)}
+              className="flex min-w-0 flex-1 items-center gap-2"
             >
-              {config.logoShadow ? "On" : "Off"}
-            </span>
-          </button>
+              <span className={`text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>Shadow</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  config.logoShadow ? "bg-accent/15 text-accent" : "bg-base-800 text-base-500"
+                }`}
+              >
+                {config.logoShadow ? "On" : "Off"}
+              </span>
+            </button>
+            {config.logoShadow && (
+              <button
+                onClick={() => setShadowExpanded((o) => !o)}
+                className="flex-shrink-0 text-base-500 hover:text-accent"
+                title={shadowExpanded ? "Hide shadow options" : "Show shadow options"}
+                aria-expanded={shadowExpanded}
+              >
+                <Chevron open={shadowExpanded} />
+              </button>
+            )}
+          </div>
 
-          {config.logoShadow && (
+          {config.logoShadow && shadowExpanded && (
             <div className="mt-3 space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-slate-300">Shadow color</label>
@@ -196,21 +214,33 @@ export default function SettingsPanel({ config, setConfig, onChooseOutputFolder,
         </div>
 
         <div className="mb-1 rounded-xl2 border border-base-800 p-3">
-          <button
-            onClick={() => set("logoOutline")(!config.logoOutline)}
-            className="flex w-full items-center justify-between"
-          >
-            <span className={`text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>Outline</span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                config.logoOutline ? "bg-accent/15 text-accent" : "bg-base-800 text-base-500"
-              }`}
+          <div className="flex w-full items-center justify-between gap-2">
+            <button
+              onClick={() => set("logoOutline")(!config.logoOutline)}
+              className="flex min-w-0 flex-1 items-center gap-2"
             >
-              {config.logoOutline ? "On" : "Off"}
-            </span>
-          </button>
+              <span className={`text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>Outline</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  config.logoOutline ? "bg-accent/15 text-accent" : "bg-base-800 text-base-500"
+                }`}
+              >
+                {config.logoOutline ? "On" : "Off"}
+              </span>
+            </button>
+            {config.logoOutline && (
+              <button
+                onClick={() => setOutlineExpanded((o) => !o)}
+                className="flex-shrink-0 text-base-500 hover:text-accent"
+                title={outlineExpanded ? "Hide outline options" : "Show outline options"}
+                aria-expanded={outlineExpanded}
+              >
+                <Chevron open={outlineExpanded} />
+              </button>
+            )}
+          </div>
 
-          {config.logoOutline && (
+          {config.logoOutline && outlineExpanded && (
             <div className="mt-3 space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-slate-300">Outline color</label>
