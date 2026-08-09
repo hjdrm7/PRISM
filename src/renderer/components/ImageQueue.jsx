@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import { Image as ImageIcon, Folder, X } from "lucide-react";
 
 export default function ImageQueue({
   images,
@@ -70,12 +71,18 @@ export default function ImageQueue({
           dragActive ? "drop-zone-active" : ""
         }`}
       >
-        <div className="mb-2 text-2xl">{isImageMode ? "🖼️" : "📁"}</div>
+        <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-base-800/60">
+          {isImageMode ? (
+            <ImageIcon className="h-4 w-4 text-base-500" strokeWidth={1.75} />
+          ) : (
+            <Folder className="h-4 w-4 text-base-500" strokeWidth={1.75} />
+          )}
+        </div>
         <p className="text-sm font-medium text-slate-200">
           {isImageMode ? "Drop image(s) or click to add" : "Drop a folder or click to browse"}
         </p>
         {!isImageMode && inputFolder && (
-          <p className="mt-1 truncate text-xs text-base-500" title={inputFolder}>
+          <p className="mt-1 w-full min-w-0 truncate text-xs text-base-500" title={inputFolder}>
             {inputFolder}
           </p>
         )}
@@ -88,8 +95,8 @@ export default function ImageQueue({
 
       <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
         {images.length === 0 && (
-          <p className="mt-6 text-center text-xs text-base-500">
-            {isImageMode ? "No images added yet." : "No images loaded yet."}
+          <p className="mt-2 text-center text-[11px] text-base-600">
+            {isImageMode ? "No images yet" : "No folder loaded yet"}
           </p>
         )}
         {images.map((imgPath) => {
@@ -107,7 +114,7 @@ export default function ImageQueue({
                 className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left"
                 title={imgPath}
               >
-                <span className="text-base-500">🖼️</span>
+                <ImageIcon className="h-3.5 w-3.5 flex-shrink-0 text-base-500" strokeWidth={1.75} />
                 <span className="truncate">{filename}</span>
               </button>
               <button
@@ -116,9 +123,9 @@ export default function ImageQueue({
                   onRemoveImage(imgPath);
                 }}
                 title="Remove"
-                className="flex-shrink-0 rounded-md px-1.5 py-1 text-xs text-base-500 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                className="flex-shrink-0 rounded-md px-1.5 py-1 text-base-500 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
               >
-                ✕
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           );

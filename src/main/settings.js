@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
   outputFolder: "",
   outputFormat: "original", // "original" | "jpeg" | "png"
   logos: [], // up to 5 logo file paths, right-to-left in list order
-  logoPosition: "bottom-right", // "top-right" | "bottom-right" | "top-left" | "bottom-left"
+  logoPosition: "bottom-right", // "top-right" | "bottom-right" | "top-left" | "bottom-left" | "center"
   logoScalePercent: 12,
   logoOpacityPercent: 100,
   logoShadow: false,
@@ -24,9 +24,9 @@ const DEFAULT_SETTINGS = {
   logoOutlineSizePercent: 3.5, // outline ring thickness, as % of logo width
   logoShadowDistancePercent: 5, // shadow throw distance, as % of logo width
   logoShadowAngle: 135, // degrees; 0 = right, 90 = down, 135 = down-right
-  enhancementMode: "auto", // "auto" | "manual"
-  enhancementFilter: "natural", // "natural" | "vivid" | "bw"
-  enhancementIntensity: 60,
+  enhancementFilter: "smart", // "smart" | "manual" | "vivid" | "bw"
+  enhancementIntensity: 60, // used internally by Smart Enhance; no UI slider anymore
+  customPresets: [], // user-saved manual presets: [{ name, values: { manualHue, manualSaturation, ... } }]
   manualHue: 0, // -180..180 degrees
   manualSaturation: 0, // -100..100
   manualBrightness: 0, // -100..100 (Value)

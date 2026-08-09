@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import ImageQueue from "./components/ImageQueue.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import CompareSlider from "./components/CompareSlider.jsx";
+import { CheckCircle2, AlertTriangle, StopCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 const MAX_LOGOS = 5;
 
@@ -23,9 +24,9 @@ const DEFAULT_CONFIG = {
   logoOutlineSizePercent: 3.5,
   logoShadowDistancePercent: 5,
   logoShadowAngle: 135,
-  enhancementMode: "auto", // "auto" | "manual"
-  enhancementFilter: "natural", // "natural" | "vivid" | "bw"
-  enhancementIntensity: 60,
+  enhancementFilter: "smart", // "smart" | "manual" | "vivid" | "bw"
+  enhancementIntensity: 60, // used internally by Smart Enhance; no UI slider anymore
+  customPresets: [], // user-saved manual presets: [{ name, values: { manualHue, manualSaturation, ... } }]
   manualHue: 0,
   manualSaturation: 0,
   manualBrightness: 0,
@@ -296,7 +297,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedImage,
-    config.enhancementMode,
     config.enhancementFilter,
     config.enhancementIntensity,
     config.manualHue,
@@ -389,7 +389,9 @@ export default function App() {
               }.`
       });
     }
-    resultBannerTimer.current = setTimeout(() => setResultBanner(null), 4000);
+    // Stays open until the user dismisses it via CLOSE — success, failure,
+    // and cancellation all leave enough to read (counts, and up to 8 error
+    // lines on failure) that it shouldn't disappear on its own.
 
     // Clear the queue once processing actually finishes, so the next run
     // starts clean. If the user cancelled partway through, leave the queue
@@ -418,14 +420,18 @@ export default function App() {
                 : "border-red-500/40 bg-red-500/15 text-red-300"
             }`}
           >
-            <span className="flex-shrink-0 text-sm">{toast.type === "success" ? "✅" : "⚠️"}</span>
+            {toast.type === "success" ? (
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            )}
             <p className="flex-1 text-xs leading-snug">{toast.message}</p>
             <button
               onClick={dismissToast}
-              className="flex-shrink-0 rounded-md px-1 text-xs text-current opacity-60 transition-opacity hover:opacity-100"
+              className="flex-shrink-0 rounded-md px-1 text-current opacity-60 transition-opacity hover:opacity-100"
               title="Dismiss"
             >
-              ✕
+              <X className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -462,19 +468,11 @@ export default function App() {
         <button
           onClick={() => setLeftPanelOpen((o) => !o)}
           title={leftPanelOpen ? "Hide queue panel" : "Show queue panel"}
-          className="relative z-10 -mx-3 flex h-9 w-9 flex-shrink-0 self-center items-center justify-center rounded-full border border-base-700 bg-base-800 text-slate-300 shadow-lg transition-colors hover:bg-base-700 hover:text-accent"
+          className="relative z-10 -mx-3 flex h-9 w-9 flex-shrink-0 items-center justify-center self-center rounded-full border border-base-700 bg-base-800 text-slate-300 shadow-lg transition-colors hover:bg-base-700 hover:text-accent"
         >
-          <svg
-            viewBox="0 0 20 20"
+          <ChevronLeft
             className={`h-4 w-4 transition-transform duration-200 ${leftPanelOpen ? "" : "rotate-180"}`}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12.5 5L7.5 10L12.5 15" />
-          </svg>
+          />
         </button>
 
         {/* Center: preview */}
@@ -482,8 +480,11 @@ export default function App() {
           <div className="relative min-h-0 flex-1">
             <CompareSlider beforeSrc={preview.before} afterSrc={preview.after} label="Processed" />
             {previewLoading && !isProcessing && (
-              <div className="absolute right-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-xs text-accent">
-                Rendering preview…
+              <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-6">
+                <div className="flex items-center gap-1.5 rounded-full border border-base-700 bg-black/50 px-2.5 py-1 shadow-lg backdrop-blur-sm">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                  <span className="text-xs font-medium text-slate-200">Rendering preview…</span>
+                </div>
               </div>
             )}
 
@@ -492,8 +493,14 @@ export default function App() {
                 <div className="flex w-64 flex-col items-center gap-1 rounded-2xl border border-base-700 bg-base-900/95 px-6 py-7 text-center shadow-2xl">
                   {resultBanner ? (
                     <>
-                      <span className="mb-2 text-3xl">
-                        {resultBanner.type === "success" ? "✅" : resultBanner.type === "cancelled" ? "⏹️" : "⚠️"}
+                      <span className="mb-2 text-accent">
+                        {resultBanner.type === "success" ? (
+                          <CheckCircle2 className="h-8 w-8" strokeWidth={1.75} />
+                        ) : resultBanner.type === "cancelled" ? (
+                          <StopCircle className="h-8 w-8 text-slate-400" strokeWidth={1.75} />
+                        ) : (
+                          <AlertTriangle className="h-8 w-8 text-yellow-400" strokeWidth={1.75} />
+                        )}
                       </span>
                       <p className="text-sm font-semibold text-slate-100">
                         {resultBanner.type === "success"
@@ -570,19 +577,11 @@ export default function App() {
         <button
           onClick={() => setRightPanelOpen((o) => !o)}
           title={rightPanelOpen ? "Hide settings panel" : "Show settings panel"}
-          className="relative z-10 -mx-3 flex h-9 w-9 flex-shrink-0 self-center items-center justify-center rounded-full border border-base-700 bg-base-800 text-slate-300 shadow-lg transition-colors hover:bg-base-700 hover:text-accent"
+          className="relative z-10 -mx-3 flex h-9 w-9 flex-shrink-0 items-center justify-center self-center rounded-full border border-base-700 bg-base-800 text-slate-300 shadow-lg transition-colors hover:bg-base-700 hover:text-accent"
         >
-          <svg
-            viewBox="0 0 20 20"
+          <ChevronRight
             className={`h-4 w-4 transition-transform duration-200 ${rightPanelOpen ? "" : "rotate-180"}`}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M7.5 5L12.5 10L7.5 15" />
-          </svg>
+          />
         </button>
 
         {/* Right: settings */}

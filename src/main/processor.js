@@ -2,8 +2,8 @@
  * processor.js
  * Core image processing engine (Node/sharp) for ACCESS-PhotoProcessor.
  *
- * Two enhancement modes:
- *   - Auto: a single 0-100 `enhancementIntensity` slider scales a fixed
+ * Two enhancement paths, chosen by config.enhancementFilter:
+ *   - "smart" (Smart Enhance): a single fixed-intensity automatic
  *     pipeline — sharpen goes LAST, after noise reduction, so it doesn't
  *     amplify grain that denoising would otherwise smooth back out:
  *       1. Auto-exposure (pulls each photo's own mean brightness toward
@@ -13,9 +13,15 @@
  *       4. Median filter (light noise reduction)
  *       5. Saturation boost
  *       6. Sharpen (unsharp mask)
- *   - Manual: independent Hue, Saturation, Brightness/Value, Contrast,
- *     Exposure, Highlights, Shadows, and Sharpen controls. See
- *     buildManualPipeline / buildToneCurveLUT below.
+ *     There's no user-facing intensity slider for this anymore — it
+ *     always runs at SMART_ENHANCE_INTENSITY — since the point of Smart
+ *     Enhance is that PRISM decides, not the person.
+ *   - "vivid" / "bw" (or any further manual tweaking on top of them):
+ *     independent Hue, Saturation, Brightness/Value, Contrast, Exposure,
+ *     Highlights, Shadows, and Sharpen controls. Picking Vivid or BW in
+ *     the UI just seeds these sliders with preset values — from here on
+ *     it's the same manual pipeline either way. See buildManualPipeline /
+ *     buildToneCurveLUT below.
  */
 
 const sharp = require("sharp");
@@ -28,42 +34,18 @@ function clampIntensity(intensity) {
   return Math.max(0, Math.min(100, intensity)) / 100;
 }
 
-/**
- * Auto-mode filter "looks" applied on top of the base auto pipeline.
- * Unlike the base auto steps (auto-expose, CLAHE, sharpen, ...), which
- * scale continuously with the Intensity slider, each look is applied at
- * a fixed, clearly visible strength whenever it's selected — Intensity
- * still controls how strong the underlying auto-correction is, but the
- * chosen look itself shouldn't fade to near-nothing just because
- * Intensity happens to be set low. The only exception is a light
- * fade-in as `factor` first crosses above 0, so there's no hard pop the
- * instant intensity leaves zero.
- */
-function applyAutoFilter(pipeline, filterType, factor) {
-  const strength = Math.min(1, factor / 0.25); // full look strength by ~25% intensity
-
-  switch (filterType) {
-    case "vivid":
-      // Strong extra punch on top of the base saturation/sharpen boost.
-      return pipeline
-        .modulate({ saturation: 1 + 0.45 * strength })
-        .linear(1 + 0.25 * strength, -18 * strength);
-
-    case "bw":
-      // Full grayscale once the look is at strength.
-      return pipeline.modulate({ saturation: 1 - strength });
-
-    case "natural":
-    default:
-      return pipeline;
-  }
-}
+// Smart Enhance no longer exposes an intensity slider in the UI — it's an
+// automatic, per-image decision. Falls back to this fixed strength when
+// config.enhancementIntensity isn't set (also used as-is for any config
+// saved before the intensity slider was removed).
+const SMART_ENHANCE_INTENSITY = 60;
 
 /**
- * Build a sharp pipeline with the "Auto" enhancement steps applied,
- * scaled by a single 0-100 intensity value.
+ * Build a sharp pipeline with the Smart Enhance steps applied, scaled by
+ * a single 0-100 intensity value (see SMART_ENHANCE_INTENSITY — there's
+ * no slider for this anymore, so callers pass the fixed constant).
  */
-async function buildAutoPipeline(image, intensity, filterType = "natural") {
+async function buildAutoPipeline(image, intensity) {
   const factor = clampIntensity(intensity);
   if (factor === 0) return image;
 
@@ -115,10 +97,6 @@ async function buildAutoPipeline(image, intensity, filterType = "natural") {
   const sharpenSigma = 0.8 + 1.2 * factor;
   const sharpenM1 = 0.3 + 0.7 * factor;
   pipeline = pipeline.sharpen({ sigma: sharpenSigma, m1: sharpenM1, m2: 0.2 });
-
-  // 7. Filter "look" — a color-grade layered on top of the base auto
-  // adjustments above, scaled by the same intensity factor.
-  pipeline = applyAutoFilter(pipeline, filterType, factor);
 
   return pipeline;
 }
@@ -231,16 +209,38 @@ async function buildManualPipeline(image, config) {
 }
 
 /**
- * Dispatches to the Auto (single-intensity) or Manual (per-property)
- * enhancement pipeline based on config.enhancementMode. Anything other
- * than exactly "manual" (including undefined, for older saved configs)
- * falls back to Auto.
+ * Dispatches to the Smart Enhance (fixed-intensity automatic) or manual
+ * (per-property, includes Vivid/BW presets) pipeline based on
+ * config.enhancementFilter.
+ *
+ * "vivid" / "bw" / "manual" all go through the manual pipeline — picking
+ * Vivid or BW in the UI just seeds the manual sliders with preset values
+ * (and picking a saved preset seeds them with the person's own saved
+ * values), and "manual" is the bare mode with no seeding at all. From
+ * there it's the same manual pipeline in every case, whether or not the
+ * person nudges the sliders further. Everything else, including "smart",
+ * undefined, and the old pre-Smart-Enhance "natural" value from configs
+ * saved before this change, runs Smart Enhance.
+ *
+ * config.enhancementMode === "manual" is also honored, but ONLY when
+ * enhancementFilter isn't explicitly "smart" — it exists purely for
+ * backward compatibility with configs saved before enhancementFilter
+ * existed at all. An explicit "smart" filter must always win: without
+ * this guard, a stale enhancementMode: "manual" left over in a user's
+ * settings.json from an older app version (nothing in the current UI
+ * ever clears that field) would silently keep running the manual
+ * pipeline — applying whatever Vivid/BW values happened to be sitting
+ * in config — even after switching to Smart Enhance.
  */
 async function buildEnhancedPipeline(image, config) {
-  if (config.enhancementMode === "manual") {
+  const filter = config.enhancementFilter;
+  const usesManualPipeline =
+    filter === "vivid" || filter === "bw" || filter === "manual" || (filter !== "smart" && config.enhancementMode === "manual");
+
+  if (usesManualPipeline) {
     return buildManualPipeline(image, config);
   }
-  return buildAutoPipeline(image, config.enhancementIntensity, config.enhancementFilter || "natural");
+  return buildAutoPipeline(image, config.enhancementIntensity ?? SMART_ENHANCE_INTENSITY);
 }
 
 /**
@@ -374,16 +374,26 @@ async function prepareLogo(logoPath, targetWidthPx, opacityPercent, effects = {}
   // space in the box is left transparent — so there's no stretching and
   // no quality loss beyond the resize itself (sharp uses a high-quality
   // Lanczos filter by default).
-  let buffer = await sharp(logoPath)
-    .resize({
-      width: boxSize,
-      height: boxSize,
-      fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
-    })
-    .ensureAlpha()
-    .png()
-    .toBuffer();
+  let buffer;
+  try {
+    buffer = await sharp(logoPath)
+      .resize({
+        width: boxSize,
+        height: boxSize,
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      })
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+  } catch (err) {
+    // Without this, a failure here (e.g. a corrupted or unreadable logo
+    // file) bubbles up as a generic sharp error and gets attributed to
+    // whatever photo happened to be processing at the time, which is
+    // confusing — the photo itself is fine, the watermark isn't.
+    const name = path.basename(logoPath);
+    throw new Error(`Logo "${name}" could not be read (${err.message}). Choose a different image file.`);
+  }
 
   if (effects.shadow || effects.outline) {
     buffer = await applyLogoEffects(buffer, effects);
@@ -406,41 +416,60 @@ async function prepareLogo(logoPath, targetWidthPx, opacityPercent, effects = {}
 const MAX_LOGOS = 5;
 
 /**
- * Composite up to MAX_LOGOS logos into the chosen corner with consistent
- * spacing, sized as a percentage of the base image's shorter side (not
- * always its width) so the logo comes out the same physical size whether
- * the source photo is landscape or portrait — using width alone would
- * make the logo shrink on portrait shots, since their width is the short
- * dimension.
+ * Composite up to MAX_LOGOS logos into the chosen corner (or dead center)
+ * with consistent spacing, sized as a percentage of the base image's
+ * shorter side (not always its width) so the logo comes out the same
+ * physical size whether the source photo is landscape or portrait — using
+ * width alone would make the logo shrink on portrait shots, since their
+ * width is the short dimension.
  */
 async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityPercent, effects = {}, position = "bottom-right") {
   const referenceDimension = Math.min(baseMeta.width, baseMeta.height);
   const targetWidth = Math.max(1, Math.round(referenceDimension * (scalePercent / 100)));
   const margin = Math.max(4, Math.round(referenceDimension * 0.015));
 
+  const isCenter = position === "center";
   const isRight = position === "top-right" || position === "bottom-right";
   const isBottom = position === "bottom-right" || position === "bottom-left";
 
   const list = (logoPaths || []).filter(Boolean).slice(0, MAX_LOGOS);
-  // First logo in the list ends up closest to the chosen corner. Laying out
-  // toward a right corner walks right-to-left (so the list needs reversing
-  // to keep the first entry nearest the corner); laying out toward a left
-  // corner walks left-to-right, where the list's natural order already
-  // puts the first entry nearest the corner.
+  // First logo in the list ends up closest to the chosen corner (or, for
+  // center placement, leftmost in the centered row). Laying out toward a
+  // right corner walks right-to-left (so the list needs reversing to keep
+  // the first entry nearest the corner); laying out toward a left corner
+  // or the center walks left-to-right, where the list's natural order
+  // already puts the first entry first.
   const ordered = isRight ? [...list].reverse() : list;
 
-  const composites = [];
-  let xCursor = isRight ? baseMeta.width - margin : margin;
-
+  // Prepare every logo up front. Center placement needs each logo's
+  // rendered width before it can know where the centered row should
+  // start, so we can't position-as-we-go the way the corner layouts do.
+  const prepared = [];
   for (const logoPath of ordered) {
     const logoBuffer = await prepareLogo(logoPath, targetWidth, opacityPercent, effects);
     const logoMeta = await sharp(logoBuffer).metadata();
+    prepared.push({ logoBuffer, logoMeta });
+  }
 
-    const x = isRight ? xCursor - logoMeta.width : xCursor;
-    const y = isBottom ? baseMeta.height - margin - logoMeta.height : margin;
+  const composites = [];
 
-    composites.push({ input: logoBuffer, left: Math.max(0, x), top: Math.max(0, y) });
-    xCursor = isRight ? x - margin : x + logoMeta.width + margin;
+  if (isCenter) {
+    const rowWidth =
+      prepared.reduce((sum, p) => sum + p.logoMeta.width, 0) + margin * Math.max(0, prepared.length - 1);
+    let xCursor = Math.round((baseMeta.width - rowWidth) / 2);
+    for (const { logoBuffer, logoMeta } of prepared) {
+      const y = Math.round((baseMeta.height - logoMeta.height) / 2);
+      composites.push({ input: logoBuffer, left: Math.max(0, xCursor), top: Math.max(0, y) });
+      xCursor += logoMeta.width + margin;
+    }
+  } else {
+    let xCursor = isRight ? baseMeta.width - margin : margin;
+    for (const { logoBuffer, logoMeta } of prepared) {
+      const x = isRight ? xCursor - logoMeta.width : xCursor;
+      const y = isBottom ? baseMeta.height - margin - logoMeta.height : margin;
+      composites.push({ input: logoBuffer, left: Math.max(0, x), top: Math.max(0, y) });
+      xCursor = isRight ? x - margin : x + logoMeta.width + margin;
+    }
   }
 
   return composites.length ? baseSharp.composite(composites) : baseSharp;
@@ -515,7 +544,19 @@ function getOrientedMeta(meta) {
  * Process a single image end-to-end and return a sharp instance ready to save.
  */
 async function buildProcessedImage(imagePath, config) {
-  const rawMeta = await sharp(imagePath).metadata();
+  let rawMeta;
+  try {
+    rawMeta = await sharp(imagePath).metadata();
+  } catch (err) {
+    // Distinguishes "this specific photo can't be decoded" (e.g. it's
+    // actually RAW/HEIC under a .jpg extension, a CMYK JPEG libvips can't
+    // read, or a corrupted file) from a watermark problem — both throw
+    // the same generic libvips message otherwise, which made this look
+    // watermark-related when it wasn't.
+    throw new Error(
+      `"${path.basename(imagePath)}" could not be read (${err.message}). It may be corrupted, RAW, HEIC, or a CMYK JPEG — try re-exporting it as a standard sRGB JPEG or PNG.`
+    );
+  }
   // .rotate() with no args auto-orients the pixels per the file's EXIF
   // Orientation tag and strips that tag from the output, so the saved
   // image displays correctly everywhere instead of relying on each
@@ -523,11 +564,31 @@ async function buildProcessedImage(imagePath, config) {
   const image = sharp(imagePath).rotate();
   const meta = getOrientedMeta(rawMeta);
 
-  let pipeline = await buildEnhancedPipeline(image, config);
+  let pipeline;
+  try {
+    pipeline = await buildEnhancedPipeline(image, config);
+  } catch (err) {
+    // metadata() above only reads the file header, so a header-valid but
+    // body-corrupt (or genuinely unsupported) file only fails here, once
+    // pixels are actually decoded — this is the failure that was showing
+    // up as a bare, unattributed libvips error during batch runs.
+    throw new Error(
+      `"${path.basename(imagePath)}" could not be read (${err.message}). It may be corrupted, RAW, HEIC, or a CMYK JPEG — try re-exporting it as a standard sRGB JPEG or PNG.`
+    );
+  }
 
   if (config.logos && config.logos.length) {
     // Need the enhanced pixels resolved before compositing, so buffer through.
-    const enhancedBuffer = await pipeline.toBuffer();
+    // Must specify an explicit output format here: when the manual tone-curve
+    // step (buildManualPipeline) has run, `pipeline`'s source is raw decoded
+    // pixel data (sharp(data, {raw:...})) rather than an encoded file, and
+    // calling toBuffer() with no format on that dumps unencoded raw bytes
+    // instead of a real image — which then fails to re-decode below with a
+    // generic "unsupported image format" error that looked like a bad logo
+    // file but wasn't. PNG (lossless) keeps this intermediate step from
+    // costing any quality before the final save re-encodes to the real
+    // output format anyway.
+    const enhancedBuffer = await pipeline.png().toBuffer();
     const enhancedSharp = sharp(enhancedBuffer);
     pipeline = await applyLogos(
       enhancedSharp,
@@ -579,12 +640,14 @@ async function saveProcessed(pipeline, outputPath, jpegQuality) {
  * pipeline (and logo compositing) on the already-small image instead, which
  * gives a visually equivalent preview for a fraction of the compute.
  *
- * This is safe to reorder (unlike the full batch path in
+ * This downscale-first reordering is safe (unlike the full batch path in
  * buildProcessedImage, which must stay full-res -> composite -> save so the
  * output file is full quality): logo scale/position are both percentages of
  * the base canvas, so shrinking the canvas first and then compositing
  * against ITS dimensions still places the logo correctly, just smaller —
- * exactly what a preview should show anyway.
+ * exactly what a preview should show anyway. The logo is still composited
+ * only after the enhancement pipeline is fully resolved to pixels (see
+ * below), so enhancement never applies to the watermark itself.
  */
 async function processPreview(imagePath, config) {
   const PREVIEW_MAX = 640;
@@ -592,10 +655,17 @@ async function processPreview(imagePath, config) {
   // Auto-orient, then downscale once up front. This small buffer is reused
   // as the input to both the "before" thumbnail and the enhancement
   // pipeline below, instead of re-decoding/re-resizing the source twice.
-  const smallBuffer = await sharp(imagePath)
-    .rotate()
-    .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside", kernel: "lanczos3" })
-    .toBuffer();
+  let smallBuffer;
+  try {
+    smallBuffer = await sharp(imagePath)
+      .rotate()
+      .resize({ width: PREVIEW_MAX, height: PREVIEW_MAX, fit: "inside", kernel: "lanczos3" })
+      .toBuffer();
+  } catch (err) {
+    throw new Error(
+      `"${path.basename(imagePath)}" could not be read (${err.message}). It may be corrupted, RAW, HEIC, or a CMYK JPEG — try re-exporting it as a standard sRGB JPEG or PNG.`
+    );
+  }
 
   const originalBuffer = await sharp(smallBuffer)
     .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
@@ -606,8 +676,17 @@ async function processPreview(imagePath, config) {
   let pipeline = await buildEnhancedPipeline(sharp(smallBuffer), config);
 
   if (config.logos && config.logos.length) {
+    // Resolve the enhancement pipeline to real, finished pixels before
+    // compositing the logo — matching buildProcessedImage's full-res
+    // path. Enhancement (exposure, contrast, saturation, sharpen, etc.)
+    // must apply only to the photo, never to the watermark; compositing
+    // onto a fully materialized buffer instead of a still-pending
+    // operation chain makes that a guarantee rather than an assumption
+    // about internal pipeline ordering.
+    const enhancedBuffer = await pipeline.png().toBuffer();
+    const enhancedSharp = sharp(enhancedBuffer);
     pipeline = await applyLogos(
-      pipeline,
+      enhancedSharp,
       smallMeta,
       config.logos,
       config.logoScalePercent,

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const sharp = require("sharp");
 const { processBatch, processPreview, SUPPORTED_EXTENSIONS } = require("./processor");
 const { loadSettings, saveSettings } = require("./settings");
 
@@ -67,10 +68,29 @@ ipcMain.handle("dialog:choose-folder", async () => {
 ipcMain.handle("dialog:choose-image", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile"],
-    filters: [{ name: "PNG Images", extensions: ["png"] }]
+    filters: [
+      { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "svg"] }
+    ]
   });
   if (result.canceled || !result.filePaths.length) return null;
-  return result.filePaths[0];
+
+  const filePath = result.filePaths[0];
+
+  // Verify the file actually decodes as an image right away, instead of
+  // only discovering it's broken deep inside a later batch run — where
+  // the failure gets misattributed to whatever photo happened to be
+  // processing at the time, not the logo itself.
+  try {
+    await sharp(filePath).metadata();
+  } catch (err) {
+    dialog.showErrorBox(
+      "Couldn't use this image",
+      `"${path.basename(filePath)}" isn't a readable image file (${err.message}). Pick a different file.`
+    );
+    return null;
+  }
+
+  return filePath;
 });
 
 ipcMain.handle("dialog:choose-input-image", async () => {
