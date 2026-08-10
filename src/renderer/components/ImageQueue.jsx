@@ -35,19 +35,30 @@ export default function ImageQueue({
   return (
     <div className="flex h-full flex-col">
       <div className="mx-3 mt-3">
-        <div className="relative flex w-full overflow-hidden rounded-full border border-base-700 bg-base-950 p-0.5">
+        {/*
+          Direct color-scheme tabs: the active tab gets light background
+          shading, a bold label, and a darker (accent) border, while the
+          inactive tab keeps a lighter border and lighter label — four
+          cues instead of relying on background/shadow alone, so the
+          active state reads clearly even at a glance.
+        */}
+        <div className="relative flex w-full gap-1.5">
           <button
             onClick={() => onModeChange("folder")}
-            className={`flex-1 rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-              !isImageMode ? "bg-accent/15 text-accent shadow-sm" : "text-slate-400 hover:text-slate-200"
+            className={`flex-1 rounded-full border px-4 py-1.5 text-xs transition-colors ${
+              !isImageMode
+                ? "border-accent bg-accent/15 font-semibold text-accent"
+                : "border-base-700 font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
             }`}
           >
             Folder Edit
           </button>
           <button
             onClick={() => onModeChange("image")}
-            className={`flex-1 rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-              isImageMode ? "bg-accent/15 text-accent shadow-sm" : "text-slate-400 hover:text-slate-200"
+            className={`flex-1 rounded-full border px-4 py-1.5 text-xs transition-colors ${
+              isImageMode
+                ? "border-accent bg-accent/15 font-semibold text-accent"
+                : "border-base-700 font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
             }`}
           >
             Image Edit

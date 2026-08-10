@@ -2,19 +2,34 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import ImageQueue from "./components/ImageQueue.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import CompareSlider from "./components/CompareSlider.jsx";
-import { CheckCircle2, AlertTriangle, StopCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle2, AlertTriangle, StopCircle, X, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import logo from "./assets/prism-logo.png";
 import logoType from "./assets/prism-typo.png";
 
-const MAX_LOGOS = 5;
+const MAX_LOGOS = 10;
+
+// Best-effort "directory of this path" for use as a picker's default
+// location. Doesn't need to be fully correct for every edge case (UNC
+// paths, trailing slashes, etc.) — worst case a stale/odd value just
+// falls back to Electron's own default, same as passing nothing.
+function dirOf(filePath) {
+  if (!filePath) return "";
+  const idx = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return idx > 0 ? filePath.slice(0, idx) : "";
+}
 
 const DEFAULT_CONFIG = {
   inputFolder: "",
   inputMode: "folder", // "folder" | "image"
   outputFolder: "",
   outputFormat: "original", // "original" | "jpeg" | "png"
+  lastImageFolder: "",
+  lastLogoFolder: "",
   logos: [],
+  logoPresets: [],
   logoPosition: "bottom-right",
+  logoMarginPercent: 1.5,
+  logoGapPercent: 12.5,
   logoScalePercent: 12,
   logoOpacityPercent: 100,
   logoShadow: false,
@@ -64,6 +79,8 @@ export default function App() {
   const [summary, setSummary] = useState(null);
   const [toast, setToast] = useState(null); // { type: "error", message } — validation/preview errors only
   const [resultBanner, setResultBanner] = useState(null); // { type: "success" | "error" | "cancelled", message } — shown in the overlay card after a batch finishes
+  const [updateInfo, setUpdateInfo] = useState(null); // { latestVersion, url } — set when a newer GitHub release exists
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
@@ -123,6 +140,26 @@ export default function App() {
     })();
   }, []);
 
+  // Check GitHub for a newer release once on launch. Silent on failure
+  // (no network, rate-limited, etc.) since this is a nice-to-have, not
+  // something that should ever interrupt or error out the app.
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await window.api.checkForUpdates();
+        if (result?.ok && result.available) {
+          setUpdateInfo({ latestVersion: result.latestVersion, url: result.url });
+        }
+      } catch {
+        // ignore — update checks are best-effort
+      }
+    })();
+  }, []);
+
+  const onOpenReleasePage = useCallback(() => {
+    if (updateInfo?.url) window.api.openExternal(updateInfo.url);
+  }, [updateInfo]);
+
   // Save settings whenever config changes (debounced-ish via effect)
   useEffect(() => {
     window.api.saveSettings(config);
@@ -181,17 +218,23 @@ export default function App() {
   }, [showToast]);
 
   const onChooseFolder = useCallback(async () => {
-    const folder = await window.api.chooseFolder();
+    // Defaults to whatever folder is currently loaded, so re-opening the
+    // picker (e.g. to switch to a sibling folder) starts from there
+    // instead of the OS default location every time.
+    const folder = await window.api.chooseFolder(config.inputFolder || undefined);
     if (folder) await loadFolder(folder);
-  }, [loadFolder]);
+  }, [loadFolder, config.inputFolder]);
 
   // "Image" mode: the picker supports multi-select, and every choice is
   // added to the existing queue rather than replacing it, so images from
   // different folders can accumulate together.
   const onChooseImages = useCallback(async () => {
-    const files = await window.api.chooseInputImage();
-    if (files && files.length) appendImages(files);
-  }, [appendImages]);
+    const files = await window.api.chooseInputImage(config.lastImageFolder || undefined);
+    if (files && files.length) {
+      appendImages(files);
+      setConfig((c) => ({ ...c, lastImageFolder: dirOf(files[0]) || c.lastImageFolder }));
+    }
+  }, [appendImages, config.lastImageFolder]);
 
   // Drag-and-drop can hand us any mix of files and/or folders. In folder
   // mode we only ever care about the first dropped path (folder or lone
@@ -230,25 +273,42 @@ export default function App() {
   }, []);
 
   const onChooseOutputFolder = useCallback(async () => {
-    const folder = await window.api.chooseFolder();
+    // Defaults to the currently-set output folder, so re-picking (e.g. to
+    // nudge it to a nearby subfolder) doesn't start back at square one.
+    const folder = await window.api.chooseFolder(config.outputFolder || undefined);
     if (folder) setConfig((c) => ({ ...c, outputFolder: folder }));
-  }, []);
+  }, [config.outputFolder]);
 
   const onAddLogo = useCallback(async () => {
-    if ((config.logos?.length || 0) >= MAX_LOGOS) return;
-    const file = await window.api.chooseLogoImage();
-    if (file) setConfig((c) => ({ ...c, logos: [...(c.logos || []), file] }));
-  }, [config.logos]);
+    const remaining = MAX_LOGOS - (config.logos?.length || 0);
+    if (remaining <= 0) return;
+    const files = await window.api.chooseLogoImage(config.lastLogoFolder || undefined, true);
+    if (files && files.length) {
+      // Respect the MAX_LOGOS cap even if the user selected more files
+      // than there's room for — take as many as fit, in the order
+      // the OS picker returned them.
+      const toAdd = files.slice(0, remaining);
+      const lastFile = toAdd[toAdd.length - 1];
+      setConfig((c) => ({
+        ...c,
+        logos: [...(c.logos || []), ...toAdd],
+        lastLogoFolder: dirOf(lastFile) || c.lastLogoFolder
+      }));
+    }
+  }, [config.logos, config.lastLogoFolder]);
 
-  const onChooseLogoAt = useCallback(async (index) => {
-    const file = await window.api.chooseLogoImage();
-    if (!file) return;
-    setConfig((c) => {
-      const logos = [...(c.logos || [])];
-      logos[index] = file;
-      return { ...c, logos };
-    });
-  }, []);
+  const onChooseLogoAt = useCallback(
+    async (index) => {
+      const file = await window.api.chooseLogoImage(config.lastLogoFolder || undefined);
+      if (!file) return;
+      setConfig((c) => {
+        const logos = [...(c.logos || [])];
+        logos[index] = file;
+        return { ...c, logos, lastLogoFolder: dirOf(file) || c.lastLogoFolder };
+      });
+    },
+    [config.lastLogoFolder]
+  );
 
   const onRemoveLogoAt = useCallback((index) => {
     setConfig((c) => {
@@ -256,6 +316,12 @@ export default function App() {
       logos.splice(index, 1);
       return { ...c, logos };
     });
+  }, []);
+
+  // Clears every watermark in one go, e.g. before starting a fresh set
+  // instead of removing each LogoThumb one at a time.
+  const onClearLogos = useCallback(() => {
+    setConfig((c) => ({ ...c, logos: [] }));
   }, []);
 
   // Reorders a logo one slot toward the front (-1) or back (+1) of the
@@ -380,6 +446,8 @@ export default function App() {
     config.manualVignette,
     JSON.stringify(config.logos),
     config.logoPosition,
+    config.logoMarginPercent,
+    config.logoGapPercent,
     config.logoScalePercent,
     config.logoOpacityPercent,
     config.logoShadow,
@@ -528,6 +596,26 @@ export default function App() {
       <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-base-800 bg-base-900 px-4">
         <img src={logo} className="h-6 w-6" alt="PRISM" />
         <img src={logoType} className="h-4" alt="PRISM-FONT" />
+
+        {updateInfo && !updateDismissed && (
+          <div className="ml-3 flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-2.5 pr-1.5 text-xs">
+            <Sparkles className="h-3 w-3 flex-shrink-0 text-accent" strokeWidth={2.25} />
+            <button
+              onClick={onOpenReleasePage}
+              className="font-medium text-accent hover:underline"
+              title="Open the release on GitHub"
+            >
+              v{updateInfo.latestVersion} available
+            </button>
+            <button
+              onClick={() => setUpdateDismissed(true)}
+              title="Dismiss"
+              className="flex-shrink-0 rounded-md p-0.5 text-accent/70 opacity-70 transition-opacity hover:opacity-100"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -715,6 +803,7 @@ export default function App() {
                 onAddLogo={onAddLogo}
                 onChooseLogoAt={onChooseLogoAt}
                 onRemoveLogoAt={onRemoveLogoAt}
+                onClearLogos={onClearLogos}
                 onMoveLogoAt={onMoveLogoAt}
                 onReorderLogo={onReorderLogo}
                 focusSection={focusSection}

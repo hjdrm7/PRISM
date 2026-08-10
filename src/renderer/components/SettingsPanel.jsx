@@ -3,7 +3,7 @@ import LabeledSlider from "./LabeledSlider.jsx";
 import AngleDial from "./AngleDial.jsx";
 import { Layers, Sparkles, Download, X, Sun, Droplet, Wand2, RotateCcw, Save, Trash2, ChevronLeft, ChevronRight, BookMarked, Lightbulb, Waves, GripVertical, Image as ImageIcon, Plus } from "lucide-react";
 
-const MAX_LOGOS = 5;
+const MAX_LOGOS = 10;
 
 // Preset slider values applied instantly when the person picks a one-click
 // filter, so Vivid/BW visibly move the Tone/Color/Detail bars to show what
@@ -252,6 +252,7 @@ export default function SettingsPanel({
   onAddLogo,
   onChooseLogoAt,
   onRemoveLogoAt,
+  onClearLogos,
   onMoveLogoAt,
   onReorderLogo,
   focusSection,
@@ -305,6 +306,42 @@ export default function SettingsPanel({
   // so the Presets row can highlight it like Vivid/BW/Smart highlight
   // themselves — this is a session-only convenience, not persisted.
   const [activeCustomPreset, setActiveCustomPreset] = useState(null);
+
+  // Watermark logo presets: save the current set of logos (and their
+  // stacking order) under a name, so a whole multi-logo arrangement can
+  // be reapplied in one click instead of re-adding each file. Mirrors the
+  // enhancement-preset save flow above, but scoped to just the logo list.
+  // Also captures the current placement/appearance sliders (distance from
+  // corner, distance between watermarks, size, opacity, shadow, outline)
+  // so reapplying a preset restores the whole look, not just which files
+  // are loaded.
+  const [savingLogoPreset, setSavingLogoPreset] = useState(false);
+  const [logoPresetNameDraft, setLogoPresetNameDraft] = useState("");
+  const [activeLogoPreset, setActiveLogoPreset] = useState(null);
+
+  const WATERMARK_DEFAULTS = {
+    logoMarginPercent: 1.5,
+    logoGapPercent: 12.5,
+    logoScalePercent: 12,
+    logoOpacityPercent: 100,
+    logoShadow: false,
+    logoShadowColor: "#000000",
+    logoShadowOpacityPercent: 100,
+    logoShadowDistancePercent: 5,
+    logoShadowAngle: 135,
+    logoOutline: false,
+    logoOutlineColor: "#ffffff",
+    logoOutlineOpacityPercent: 100,
+    logoOutlineSizePercent: 3.5
+  };
+  const WATERMARK_ADJUSTMENT_KEYS = Object.keys(WATERMARK_DEFAULTS);
+  const resetWatermarkAdjustments = () => {
+    setConfig((c) => ({
+      ...c,
+      ...WATERMARK_DEFAULTS
+    }));
+  };
+  const showWatermarkResetFooter = activeSection === "watermarks";
 
   // Which of the three enhancement views (Smart / Presets / Manual) is
   // showing. Distinct from config.enhancementFilter/enhancementMode —
@@ -361,7 +398,7 @@ export default function SettingsPanel({
           pulse={pulseSection === "watermarks"}
         />
         <SectionTab
-          title="Enhancement"
+          title="Adjustments"
           icon={Sparkles}
           active={activeSection === "enhancement"}
           onClick={() => toggleSection("enhancement")}
@@ -381,7 +418,18 @@ export default function SettingsPanel({
 
       {activeSection === "watermarks" && (
       <div className="pb-5">
-        <label className="mb-1.5 block text-xs font-medium text-slate-300">Watermarks</label>
+        <div className="mb-1.5 flex items-center justify-between">
+          <label className="block text-xs font-medium text-slate-300">Watermarks</label>
+          {logos.length > 0 && (
+            <button
+              onClick={onClearLogos}
+              title="Remove all watermarks"
+              className="text-[11px] font-medium text-base-500 hover:text-red-400"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
         <div className="mb-4 flex flex-wrap gap-3">
           {logos.map((logoPath, index) => (
             <LogoThumb
@@ -433,6 +481,139 @@ export default function SettingsPanel({
           )}
         </div>
 
+        {(() => {
+          const logoPresets = config.logoPresets || [];
+
+          const openSaveLogoPreset = () => {
+            setLogoPresetNameDraft("");
+            setSavingLogoPreset(true);
+          };
+          const cancelSaveLogoPreset = () => {
+            setSavingLogoPreset(false);
+            setLogoPresetNameDraft("");
+          };
+          const confirmSaveLogoPreset = () => {
+            const name = logoPresetNameDraft.trim();
+            if (!name || logos.length === 0) return;
+            const adjustments = {};
+            for (const key of WATERMARK_ADJUSTMENT_KEYS) adjustments[key] = config[key];
+            setConfig((c) => ({
+              ...c,
+              logoPresets: [...(c.logoPresets || []), { name, logos: [...(c.logos || [])], adjustments }]
+            }));
+            setActiveLogoPreset(name);
+            setSavingLogoPreset(false);
+            setLogoPresetNameDraft("");
+          };
+          const applyLogoPreset = (preset) => {
+            setActiveLogoPreset(preset.name);
+            setConfig((c) => ({ ...c, logos: [...preset.logos], ...(preset.adjustments || {}) }));
+          };
+          const removeLogoPreset = (index) => {
+            setConfig((c) => ({
+              ...c,
+              logoPresets: (c.logoPresets || []).filter((_, i) => i !== index)
+            }));
+          };
+
+          return (
+            <div className="mb-4">
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="block text-xs font-medium text-slate-300">Watermark Presets</label>
+                <button
+                  onClick={openSaveLogoPreset}
+                  disabled={logos.length === 0}
+                  title={logos.length === 0 ? "Add at least one watermark first" : "Save this set of watermarks and its order"}
+                  className="flex items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-[11px] font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Save className="h-3 w-3" strokeWidth={2.25} />
+                  Save Current
+                </button>
+              </div>
+
+              {savingLogoPreset && (
+                <div
+                  className="absolute inset-0 z-50 flex justify-center bg-base-950/70 px-4 pt-4 backdrop-blur-sm"
+                  onMouseDown={(e) => {
+                    if (e.target === e.currentTarget) cancelSaveLogoPreset();
+                  }}
+                >
+                  <div className="h-fit w-80 rounded-2xl border border-base-700 bg-base-900/95 p-4 shadow-2xl">
+                    <p className="mb-3 text-sm font-semibold text-slate-100">Save Watermark Preset</p>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={logoPresetNameDraft}
+                      onChange={(e) => setLogoPresetNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") confirmSaveLogoPreset();
+                        if (e.key === "Escape") cancelSaveLogoPreset();
+                      }}
+                      placeholder="Preset name…"
+                      maxLength={40}
+                      className="w-full rounded-lg border border-accent/60 bg-base-950 px-3 py-2 text-sm text-slate-200 placeholder:text-base-600 focus:border-accent focus:outline-none"
+                    />
+                    <p className="mt-2 text-[11px] text-base-500">
+                      Saves the {logos.length} current watermark{logos.length === 1 ? "" : "s"} and their stacking order.
+                    </p>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button
+                        onClick={cancelSaveLogoPreset}
+                        className="rounded-lg border border-base-700 px-3 py-1.5 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={confirmSaveLogoPreset}
+                        disabled={!logoPresetNameDraft.trim()}
+                        className="rounded-lg border border-accent/50 bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-1.5">
+                {logoPresets.map((preset, index) => (
+                  <div
+                    key={`${preset.name}-${index}`}
+                    className={`group flex items-center gap-0.5 rounded-full border pl-2.5 pr-1 py-1 text-xs font-medium hover:border-base-600 ${
+                      activeLogoPreset === preset.name
+                        ? "border-accent bg-accent/15 text-accent"
+                        : "border-base-700 text-slate-400"
+                    }`}
+                  >
+                    <button
+                      onClick={() => applyLogoPreset(preset)}
+                      className="py-0.5 hover:text-slate-200"
+                      title={`${preset.name} — ${preset.logos.length} watermark${preset.logos.length === 1 ? "" : "s"}`}
+                    >
+                      {preset.name}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (activeLogoPreset === preset.name) setActiveLogoPreset(null);
+                        removeLogoPreset(index);
+                      }}
+                      title="Delete preset"
+                      className="flex-shrink-0 rounded-md p-1 text-base-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {logoPresets.length === 0 && (
+                  <p className="py-1 text-[11px] text-base-600">
+                    No saved watermark presets yet — add watermarks above, then "Save Current".
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="mb-4">
           <label className="mb-1.5 block text-xs font-medium text-slate-300">Position</label>
           {(() => {
@@ -446,14 +627,14 @@ export default function SettingsPanel({
             const current = config.logoPosition || "bottom-right";
             return (
               <div className="flex items-center gap-4">
-                <div className="relative h-16 w-24 flex-shrink-0 rounded-lg border border-base-700 bg-base-950">
+                <div className="relative h-16 w-20 flex-shrink-0 rounded-lg border border-base-700 bg-base-950">
                   {corners.map((c) => (
                     <button
                       key={c.key}
                       onClick={() => set("logoPosition")(c.key)}
                       title={c.label}
                       aria-label={c.label}
-                      className={`absolute h-3.5 w-3.5 rounded-sm border transition-colors ${c.cls} ${
+                      className={`absolute h-5 w-5 rounded-sm border transition-colors ${c.cls} ${
                         current === c.key
                           ? "border-accent bg-accent"
                           : "border-base-600 bg-base-800 hover:border-base-500"
@@ -470,6 +651,26 @@ export default function SettingsPanel({
           })()}
         </div>
 
+        <div className={config.logoPosition === "center" ? "pointer-events-none opacity-40" : ""}>
+          <LabeledSlider
+            label="Distance from corner"
+            value={config.logoMarginPercent}
+            min={0}
+            max={10}
+            step={0.5}
+            onChange={set("logoMarginPercent")}
+          />
+        </div>
+        <div className={logos.length < 2 ? "pointer-events-none opacity-40" : ""}>
+          <LabeledSlider
+            label="Distance between watermarks"
+            value={config.logoGapPercent}
+            min={0}
+            max={50}
+            step={1}
+            onChange={set("logoGapPercent")}
+          />
+        </div>
         <LabeledSlider label="Watermark size" value={config.logoScalePercent} min={2} max={40} onChange={set("logoScalePercent")} />
         <LabeledSlider label="Watermark opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
 
@@ -491,10 +692,11 @@ export default function SettingsPanel({
             className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
           >
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className={`text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>
+              <span className={`leading-none text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>
                 Shadow
               </span>
               <span
+                className="flex items-center"
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
               >
@@ -587,10 +789,11 @@ export default function SettingsPanel({
             className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
           >
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className={`text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>
+              <span className={`leading-none text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>
                 Outline
               </span>
               <span
+                className="flex items-center"
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
               >
@@ -731,7 +934,7 @@ export default function SettingsPanel({
           };
 
           const MODE_TABS = [
-            { key: "smart", label: "Smart Enhance", icon: Sparkles },
+            { key: "smart", label: "Smart Adjust", icon: Sparkles },
             { key: "presets", label: "Presets", icon: BookMarked },
             { key: "manual", label: "Manual", icon: Wand2 }
           ];
@@ -747,12 +950,12 @@ export default function SettingsPanel({
 
           return (
             <>
-              <div className="mb-4 grid grid-cols-3 gap-1.5 overflow-hidden rounded-xl2 border border-base-800 bg-base-950 p-1">
+              <div className="mb-4 grid grid-cols-3 gap-1.5 overflow-hidden rounded-full border border-base-800 bg-base-950 p-1">
                 {MODE_TABS.map(({ key, label, icon: Icon }) => (
                   <button
                     key={key}
                     onClick={() => selectTab(key)}
-                    className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold transition-colors ${
+                    className={`flex items-center justify-center gap-1.5 rounded-full px-2 py-2 text-xs font-semibold transition-colors ${
                       effectiveTab === key
                         ? "bg-accent/15 text-accent"
                         : "text-slate-400 hover:bg-base-800 hover:text-slate-200"
@@ -819,23 +1022,14 @@ export default function SettingsPanel({
 
               {effectiveTab === "presets" && (
                 <div>
-                  <div className="mb-3 flex items-center justify-between">
+                  <div className="mb-3">
                     <p className="text-xs text-base-500">Apply a look, or save your a new one.</p>
-                    <button
-                      onClick={openSavePreset}
-                      disabled={isSmart}
-                      title={isSmart ? "Switch to Manual to save current adjustments as a preset" : "Save current adjustments as a preset"}
-                      className="flex w-[148px] flex-shrink-0 items-center justify-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Save className="h-3 w-3" strokeWidth={2.25} />
-                      Save Current
-                    </button>
                   </div>
 
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       onClick={() => applyFilter("vivid")}
-                      className={`rounded-lg border px-10 py-1.5 text-xs font-medium transition-colors ${
+                      className={`rounded-full border px-10 py-1.5 text-xs font-medium transition-colors ${
                         currentFilter === "vivid"
                           ? "border-accent bg-accent/15 text-accent"
                           : "border-base-700 text-slate-400 hover:border-base-600"
@@ -845,7 +1039,7 @@ export default function SettingsPanel({
                     </button>
                     <button
                       onClick={() => applyFilter("bw")}
-                      className={`rounded-lg border px-10 py-1.5 text-xs font-medium transition-colors ${
+                      className={`rounded-full border px-10 py-1.5 text-xs font-medium transition-colors ${
                         currentFilter === "bw"
                           ? "border-accent bg-accent/15 text-accent"
                           : "border-base-700 text-slate-400 hover:border-base-600"
@@ -856,7 +1050,7 @@ export default function SettingsPanel({
                     {customPresets.map((preset, index) => (
                       <div
                         key={`${preset.name}-${index}`}
-                        className={`group flex items-center gap-0.5 rounded-lg border pl-2.5 pr-1 py-1 text-xs font-medium hover:border-base-600 ${
+                        className={`group flex items-center gap-0.5 rounded-full border pl-2.5 pr-1 py-1 text-xs font-medium hover:border-base-600 ${
                           activeCustomPreset === preset.name
                             ? "border-accent bg-accent/15 text-accent"
                             : "border-base-700 text-slate-400"
@@ -1050,7 +1244,7 @@ export default function SettingsPanel({
               <button
                 key={opt.key}
                 onClick={() => set("outputFormat")(opt.key)}
-                className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                className={`flex-1 rounded-full border px-2 py-1.5 text-xs font-medium transition-colors ${
                   (config.outputFormat || "original") === opt.key
                     ? "border-accent bg-accent/15 text-accent"
                     : "border-base-700 text-slate-400 hover:border-base-600"
@@ -1088,7 +1282,7 @@ export default function SettingsPanel({
               <button
                 key={opt.key}
                 onClick={() => set("collisionStrategy")(opt.key)}
-                className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                className={`flex-1 rounded-full border px-2 py-1.5 text-xs font-medium transition-colors ${
                   config.collisionStrategy === opt.key
                     ? "border-accent bg-accent/15 text-accent"
                     : "border-base-700 text-slate-400 hover:border-base-600"
@@ -1108,6 +1302,19 @@ export default function SettingsPanel({
           <button
             onClick={resetManual}
             title="Reset tone, color, and detail adjustments"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-base-700 px-2 py-2 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+          >
+            <RotateCcw className="h-3 w-3" strokeWidth={2.25} />
+            Reset
+          </button>
+        </div>
+      )}
+
+      {showWatermarkResetFooter && (
+        <div className="flex-shrink-0 border-t border-base-800 bg-base-900 px-4 py-3">
+          <button
+            onClick={resetWatermarkAdjustments}
+            title="Reset watermark placement and appearance to defaults"
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-base-700 px-2 py-2 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
           >
             <RotateCcw className="h-3 w-3" strokeWidth={2.25} />

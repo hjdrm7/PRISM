@@ -26,10 +26,10 @@ function createWindow() {
     backgroundColor: "#15181b",
     // Taskbar/dock/window-manager icon — separate from the in-app <img>
     // logo in the title bar (App.jsx), since this one is drawn by the OS
-    // before the renderer even loads. Windows wants .ico, macOS/Linux
-    // will happily take .png; point both at the same base name and keep
-    // whichever files exist under build/.
-    icon: path.join(__dirname, "../../build/icon.png"),
+    // before the renderer even loads. Windows wants a multi-resolution
+    // .ico (a single-size .png can render blank/blurry in the taskbar),
+    // while macOS/Linux take .png directly.
+    icon: path.join(__dirname, "../../build", process.platform === "win32" ? "icon.ico" : "icon.png"),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     autoHideMenuBar: true,
     webPreferences: {
@@ -65,44 +65,69 @@ app.on("window-all-closed", () => {
 // IPC: folder / file pickers
 // ---------------------------------------------------------------------------
 
-ipcMain.handle("dialog:choose-folder", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+// `defaultPath` lets the renderer re-open a dialog pointed at the last
+// folder the user actually used (e.g. the previous input/output/logo
+// folder), instead of every picker starting back at the OS default each
+// time. It's optional and simply omitted from the dialog options when
+// there's nothing to default to yet (first run, or a path that no longer
+// exists — Electron falls back to its own default in that case anyway).
+ipcMain.handle("dialog:choose-folder", async (_evt, defaultPath) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+    ...(defaultPath ? { defaultPath } : {})
+  });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
 });
 
-ipcMain.handle("dialog:choose-image", async () => {
+ipcMain.handle("dialog:choose-image", async (_evt, defaultPath, multiple) => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openFile"],
+    properties: multiple ? ["openFile", "multiSelections"] : ["openFile"],
     filters: [
       { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "svg"] }
-    ]
+    ],
+    ...(defaultPath ? { defaultPath } : {})
   });
-  if (result.canceled || !result.filePaths.length) return null;
+  if (result.canceled || !result.filePaths.length) return multiple ? [] : null;
 
-  const filePath = result.filePaths[0];
-
-  // Verify the file actually decodes as an image right away, instead of
-  // only discovering it's broken deep inside a later batch run — where
-  // the failure gets misattributed to whatever photo happened to be
-  // processing at the time, not the logo itself.
-  try {
-    await sharp(filePath).metadata();
-  } catch (err) {
-    dialog.showErrorBox(
-      "Couldn't use this image",
-      `"${path.basename(filePath)}" isn't a readable image file (${err.message}). Pick a different file.`
-    );
-    return null;
+  // Verify every picked file actually decodes as an image right away,
+  // instead of only discovering it's broken deep inside a later batch
+  // run — where the failure gets misattributed to whatever photo
+  // happened to be processing at the time, not the logo itself. Bad
+  // files are dropped (with a single combined error box) rather than
+  // failing the whole selection, so the good ones still go through.
+  const valid = [];
+  const invalid = [];
+  for (const filePath of result.filePaths) {
+    try {
+      await sharp(filePath).metadata();
+      valid.push(filePath);
+    } catch (err) {
+      invalid.push(path.basename(filePath));
+    }
   }
 
-  return filePath;
+  if (invalid.length) {
+    const names = invalid.join(", ");
+    const verb = invalid.length === 1 ? "isn't a readable image file" : "aren't readable image files";
+    const followUp = valid.length
+      ? "Skipping it and using the rest of your selection."
+      : "Pick a different file.";
+    dialog.showErrorBox(
+      invalid.length === 1 ? "Couldn't use this image" : "Couldn't use some images",
+      `${names} ${verb}. ${followUp}`
+    );
+  }
+
+  if (multiple) return valid;
+  return valid[0] || null;
 });
 
-ipcMain.handle("dialog:choose-input-image", async () => {
+ipcMain.handle("dialog:choose-input-image", async (_evt, defaultPath) => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile", "multiSelections"],
-    filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png"] }]
+    filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png"] }],
+    ...(defaultPath ? { defaultPath } : {})
   });
   if (result.canceled || !result.filePaths.length) return [];
   return result.filePaths;
@@ -197,6 +222,85 @@ ipcMain.handle("processing:start-batch", async (evt, { images, config }) => {
 
 ipcMain.handle("processing:cancel-batch", async () => {
   if (activeBatchController) activeBatchController.cancelled = true;
+  return true;
+});
+
+// ---------------------------------------------------------------------------
+// IPC: check GitHub for a newer release (Phase 14) — notification only,
+// no auto-download/install. Runs on demand (renderer calls it once on
+// startup) rather than polling in the background.
+// ---------------------------------------------------------------------------
+
+const https = require("https");
+const GITHUB_REPO = "hjdrm7/PRISM";
+
+function fetchLatestRelease() {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+      {
+        headers: {
+          // GitHub's API 403s requests with no User-Agent.
+          "User-Agent": "PRISM-App",
+          Accept: "application/vnd.github+json"
+        }
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`GitHub API returned ${res.statusCode}`));
+          return;
+        }
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.setTimeout(8000, () => req.destroy(new Error("Request timed out")));
+  });
+}
+
+// Compares two "vX.Y.Z" / "X.Y.Z" version strings. Returns true if
+// `latest` is strictly newer than `current`.
+function isNewerVersion(latest, current) {
+  const norm = (v) => v.replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const a = norm(latest);
+  const b = norm(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] || 0) - (b[i] || 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
+}
+
+ipcMain.handle("updates:check", async () => {
+  try {
+    const release = await fetchLatestRelease();
+    const latestTag = release.tag_name || "";
+    const currentVersion = app.getVersion();
+    const available = latestTag ? isNewerVersion(latestTag, currentVersion) : false;
+    return {
+      ok: true,
+      available,
+      currentVersion,
+      latestVersion: latestTag.replace(/^v/i, ""),
+      url: release.html_url || `https://github.com/${GITHUB_REPO}/releases/latest`
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("shell:open-external", async (_evt, url) => {
+  if (!url || !/^https?:\/\//i.test(url)) return false;
+  await shell.openExternal(url);
   return true;
 });
 

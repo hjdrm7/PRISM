@@ -452,12 +452,20 @@ async function applyLogoEffects(
 
   layers.push({ input: logoPngBuffer, left: pad, top: pad });
 
-  return sharp({
+  const buffer = await sharp({
     create: { width: canvasWidth, height: canvasHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
   })
     .composite(layers)
     .png()
     .toBuffer();
+
+  // Report how much the canvas grew so callers can re-anchor placement on
+  // the actual logo artwork (see `pad` usage in prepareLogo/applyLogos)
+  // instead of the padded box — otherwise turning on a shadow/outline
+  // would visibly push the watermark itself further from the corner and
+  // widen the gaps between multiple watermarks, when only the shadow
+  // should be spilling outward.
+  return { buffer, pad };
 }
 
 /**
@@ -478,9 +486,20 @@ async function prepareLogo(logoPath, targetWidthPx, opacityPercent, effects = {}
   // space in the box is left transparent — so there's no stretching and
   // no quality loss beyond the resize itself (sharp uses a high-quality
   // Lanczos filter by default).
+  //
+  // Before that resize, trim() strips any transparent/solid-color
+  // padding already baked into the source file. Without this, two logos
+  // with different amounts of built-in padding (e.g. a QR code exported
+  // with a tight crop next to a badge exported with lots of surrounding
+  // whitespace) end up with different amounts of dead space inside an
+  // otherwise identically-sized box — so equal spacing between box edges
+  // (see applyLogos' logoGap) doesn't translate into equal-looking
+  // spacing between the actual visible artwork.
   let buffer;
   try {
     buffer = await sharp(logoPath)
+      .ensureAlpha()
+      .trim()
       .resize({
         width: boxSize,
         height: boxSize,
@@ -491,16 +510,34 @@ async function prepareLogo(logoPath, targetWidthPx, opacityPercent, effects = {}
       .png()
       .toBuffer();
   } catch (err) {
-    // Without this, a failure here (e.g. a corrupted or unreadable logo
-    // file) bubbles up as a generic sharp error and gets attributed to
-    // whatever photo happened to be processing at the time, which is
-    // confusing — the photo itself is fine, the watermark isn't.
-    const name = path.basename(logoPath);
-    throw new Error(`Logo "${name}" could not be read (${err.message}). Choose a different image file.`);
+    // trim() throws when there's no border to trim (artwork already
+    // touches every edge of the source file) — fall back to resizing
+    // untrimmed instead of failing the whole logo over it.
+    try {
+      buffer = await sharp(logoPath)
+        .resize({
+          width: boxSize,
+          height: boxSize,
+          fit: "contain",
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        })
+        .ensureAlpha()
+        .png()
+        .toBuffer();
+    } catch (err2) {
+      // Without this, a failure here (e.g. a corrupted or unreadable
+      // logo file) bubbles up as a generic sharp error and gets
+      // attributed to whatever photo happened to be processing at the
+      // time, which is confusing — the photo itself is fine, the
+      // watermark isn't.
+      const name = path.basename(logoPath);
+      throw new Error(`Logo "${name}" could not be read (${err2.message}). Choose a different image file.`);
+    }
   }
 
+  let pad = 0;
   if (effects.shadow || effects.outline) {
-    buffer = await applyLogoEffects(buffer, effects);
+    ({ buffer, pad } = await applyLogoEffects(buffer, effects));
   }
 
   if (opacity < 1) {
@@ -511,13 +548,16 @@ async function prepareLogo(logoPath, targetWidthPx, opacityPercent, effects = {}
       data[i] = Math.round(data[i] * opacity);
     }
 
-    return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+    buffer = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
   }
 
-  return buffer;
+  // `pad` is how far the shadow/outline canvas grew on each side beyond
+  // the actual logo artwork — callers use it to re-anchor positioning on
+  // the artwork itself rather than the padded box.
+  return { buffer, pad };
 }
 
-const MAX_LOGOS = 5;
+const MAX_LOGOS = 10;
 
 /**
  * Composite up to MAX_LOGOS logos into the chosen corner (or dead center)
@@ -527,10 +567,20 @@ const MAX_LOGOS = 5;
  * width alone would make the logo shrink on portrait shots, since their
  * width is the short dimension.
  */
-async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityPercent, effects = {}, position = "bottom-right") {
+async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityPercent, effects = {}, position = "bottom-right", marginPercent = 1.5, gapPercent = 12.5) {
   const referenceDimension = Math.min(baseMeta.width, baseMeta.height);
   const targetWidth = Math.max(1, Math.round(referenceDimension * (scalePercent / 100)));
-  const margin = Math.max(4, Math.round(referenceDimension * 0.015));
+  // Edge margin (logo block to image border) stays tied to the base image
+  // size, and is now user-adjustable via marginPercent (ignored for center
+  // placement, which has no edge to measure from).
+  const margin = Math.max(4, Math.round(referenceDimension * (marginPercent / 100)));
+  // Gap *between* multiple logos is tied to the watermark's own width
+  // instead, so the spacing scales with the watermark (bigger watermark ->
+  // proportionally bigger gap) rather than staying a fixed sliver of the
+  // photo regardless of how large the logos are. All logos share the same
+  // targetWidth square box, so this stays consistent across the row.
+  // User-adjustable via gapPercent (% of watermark width).
+  const logoGap = Math.max(4, Math.round(targetWidth * (gapPercent / 100)));
 
   const isCenter = position === "center";
   const isRight = position === "top-right" || position === "bottom-right";
@@ -550,29 +600,40 @@ async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityP
   // start, so we can't position-as-we-go the way the corner layouts do.
   const prepared = [];
   for (const logoPath of ordered) {
-    const logoBuffer = await prepareLogo(logoPath, targetWidth, opacityPercent, effects);
+    const { buffer: logoBuffer, pad } = await prepareLogo(logoPath, targetWidth, opacityPercent, effects);
     const logoMeta = await sharp(logoBuffer).metadata();
-    prepared.push({ logoBuffer, logoMeta });
+    // `logoMeta` describes the padded canvas (artwork + shadow/outline
+    // bleed) when effects are on. `artWidth`/`artHeight` are the actual
+    // watermark's own footprint (targetWidth square, minus the padding),
+    // which is what margin/gap spacing should be measured against — the
+    // shadow should spill past that footprint, not shift it.
+    prepared.push({
+      logoBuffer,
+      logoMeta,
+      pad,
+      artWidth: logoMeta.width - pad * 2,
+      artHeight: logoMeta.height - pad * 2
+    });
   }
 
   const composites = [];
 
   if (isCenter) {
     const rowWidth =
-      prepared.reduce((sum, p) => sum + p.logoMeta.width, 0) + margin * Math.max(0, prepared.length - 1);
+      prepared.reduce((sum, p) => sum + p.artWidth, 0) + logoGap * Math.max(0, prepared.length - 1);
     let xCursor = Math.round((baseMeta.width - rowWidth) / 2);
-    for (const { logoBuffer, logoMeta } of prepared) {
-      const y = Math.round((baseMeta.height - logoMeta.height) / 2);
-      composites.push({ input: logoBuffer, left: Math.max(0, xCursor), top: Math.max(0, y) });
-      xCursor += logoMeta.width + margin;
+    for (const { logoBuffer, artWidth, artHeight, pad } of prepared) {
+      const y = Math.round((baseMeta.height - artHeight) / 2);
+      composites.push({ input: logoBuffer, left: Math.max(0, xCursor - pad), top: Math.max(0, y - pad) });
+      xCursor += artWidth + logoGap;
     }
   } else {
     let xCursor = isRight ? baseMeta.width - margin : margin;
-    for (const { logoBuffer, logoMeta } of prepared) {
-      const x = isRight ? xCursor - logoMeta.width : xCursor;
-      const y = isBottom ? baseMeta.height - margin - logoMeta.height : margin;
-      composites.push({ input: logoBuffer, left: Math.max(0, x), top: Math.max(0, y) });
-      xCursor = isRight ? x - margin : x + logoMeta.width + margin;
+    for (const { logoBuffer, artWidth, artHeight, pad } of prepared) {
+      const x = isRight ? xCursor - artWidth : xCursor;
+      const y = isBottom ? baseMeta.height - margin - artHeight : margin;
+      composites.push({ input: logoBuffer, left: Math.max(0, x - pad), top: Math.max(0, y - pad) });
+      xCursor = isRight ? x - logoGap : x + artWidth + logoGap;
     }
   }
 
@@ -711,7 +772,9 @@ async function buildProcessedImage(imagePath, config) {
         outlineColor: config.logoOutlineColor,
         outlineOpacityPercent: config.logoOutlineOpacityPercent
       },
-      config.logoPosition
+      config.logoPosition,
+      config.logoMarginPercent,
+      config.logoGapPercent
     );
   }
 
@@ -806,7 +869,9 @@ async function processPreview(imagePath, config) {
         outlineColor: config.logoOutlineColor,
         outlineOpacityPercent: config.logoOutlineOpacityPercent
       },
-      config.logoPosition
+      config.logoPosition,
+      config.logoMarginPercent,
+      config.logoGapPercent
     );
   }
 

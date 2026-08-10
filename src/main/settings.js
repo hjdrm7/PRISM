@@ -11,8 +11,13 @@ const DEFAULT_SETTINGS = {
   inputMode: "folder", // "folder" | "single"
   outputFolder: "",
   outputFormat: "original", // "original" | "jpeg" | "png"
-  logos: [], // up to 5 logo file paths, right-to-left in list order
+  lastImageFolder: "", // last folder browsed in Image Edit mode's file picker, used as the picker's default path next time
+  lastLogoFolder: "", // last folder browsed when picking a watermark logo image, used as the picker's default path next time
+  logos: [], // up to 10 logo file paths, right-to-left in list order
+  logoPresets: [], // user-saved watermark sets: [{ name, logos: [path, ...] }], preserving stacking order
   logoPosition: "bottom-right", // "top-right" | "bottom-right" | "top-left" | "bottom-left" | "center"
+  logoMarginPercent: 1.5, // distance from the corner to the watermark, as % of the image's shorter side; ignored when logoPosition is "center"
+  logoGapPercent: 12.5, // spacing between multiple watermarks, as % of a single watermark's width
   logoScalePercent: 12,
   logoOpacityPercent: 100,
   logoShadow: false,
