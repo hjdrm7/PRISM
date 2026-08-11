@@ -155,6 +155,58 @@ ipcMain.handle("fs:image-thumbnail", async (_evt, filePath) => {
 });
 
 // ---------------------------------------------------------------------------
+// IPC: built-in watermark presets
+// ---------------------------------------------------------------------------
+
+function getWatermarksDir() {
+  if (app.isPackaged) {
+    // In production, extraResources are placed in process.resourcesPath
+    return path.join(process.resourcesPath, "Watermarks");
+  }
+  // In development, resolve to your local source folder
+  return path.resolve(__dirname, "../renderer/assets/Watermarks");
+}
+
+ipcMain.handle("watermarks:list-presets", async () => {
+  const presetsDir = getWatermarksDir();
+
+  if (!fs.existsSync(presetsDir)) {
+    console.error(
+      "[PRISM] Watermark presets directory not found:",
+      presetsDir
+    );
+    return [];
+  }
+
+  const files = fs.readdirSync(presetsDir, {
+    withFileTypes: true
+  });
+
+  return files
+    .filter((file) => {
+      if (!file.isFile()) return false;
+
+      const ext = path.extname(file.name).toLowerCase();
+
+      return [".png", ".jpg", ".jpeg", ".webp"].includes(ext);
+    })
+    .map((file) => {
+      const ext = path.extname(file.name);
+
+      return {
+        name: path.basename(file.name, ext),
+        fileName: file.name,
+        path: path.join(presetsDir, file.name)
+      };
+    })
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base"
+      })
+    );
+});
+
+// ---------------------------------------------------------------------------
 // IPC: folder scanning (drag-drop of a folder path resolves here too)
 // ---------------------------------------------------------------------------
 

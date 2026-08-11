@@ -475,85 +475,58 @@ async function applyLogoEffects(
  * shape — then optionally apply a drop shadow and/or white outline, then
  * apply overall opacity.
  */
-async function prepareLogo(logoPath, targetWidthPx, opacityPercent, effects = {}) {
+async function prepareLogo(logoPath, targetHeightPx, opacityPercent, effects = {}) {
   const opacity = clampIntensity(opacityPercent);
-  const boxSize = Math.max(1, Math.round(targetWidthPx));
+  const targetHeight = Math.max(1, Math.round(targetHeightPx));
 
-  // Fit each logo into an identical square box (same width AND height)
-  // regardless of its original aspect ratio, so multiple watermarks read
-  // as consistently sized. "contain" scales the logo down/up to fit
-  // inside the box without cropping or distorting it — any leftover
-  // space in the box is left transparent — so there's no stretching and
-  // no quality loss beyond the resize itself (sharp uses a high-quality
-  // Lanczos filter by default).
-  //
-  // Before that resize, trim() strips any transparent/solid-color
-  // padding already baked into the source file. Without this, two logos
-  // with different amounts of built-in padding (e.g. a QR code exported
-  // with a tight crop next to a badge exported with lots of surrounding
-  // whitespace) end up with different amounts of dead space inside an
-  // otherwise identically-sized box — so equal spacing between box edges
-  // (see applyLogos' logoGap) doesn't translate into equal-looking
-  // spacing between the actual visible artwork.
   let buffer;
+
   try {
+    // Resize by HEIGHT only.
+    // Width is calculated automatically from the logo's original aspect ratio.
+    // No trim and no containing box.
     buffer = await sharp(logoPath)
       .ensureAlpha()
-      .trim()
       .resize({
-        width: boxSize,
-        height: boxSize,
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 0 }
+        height: targetHeight,
+        fit: "inside",
+        withoutEnlargement: false
       })
       .ensureAlpha()
       .png()
       .toBuffer();
   } catch (err) {
-    // trim() throws when there's no border to trim (artwork already
-    // touches every edge of the source file) — fall back to resizing
-    // untrimmed instead of failing the whole logo over it.
-    try {
-      buffer = await sharp(logoPath)
-        .resize({
-          width: boxSize,
-          height: boxSize,
-          fit: "contain",
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
-        })
-        .ensureAlpha()
-        .png()
-        .toBuffer();
-    } catch (err2) {
-      // Without this, a failure here (e.g. a corrupted or unreadable
-      // logo file) bubbles up as a generic sharp error and gets
-      // attributed to whatever photo happened to be processing at the
-      // time, which is confusing — the photo itself is fine, the
-      // watermark isn't.
-      const name = path.basename(logoPath);
-      throw new Error(`Logo "${name}" could not be read (${err2.message}). Choose a different image file.`);
-    }
+    const name = path.basename(logoPath);
+    throw new Error(
+      `Logo "${name}" could not be read (${err.message}). Choose a different image file.`
+    );
   }
 
   let pad = 0;
+
   if (effects.shadow || effects.outline) {
     ({ buffer, pad } = await applyLogoEffects(buffer, effects));
   }
 
   if (opacity < 1) {
-    // Multiply the alpha channel by the opacity factor.
-    const { data, info } = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const { data, info } = await sharp(buffer)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
 
     for (let i = 3; i < data.length; i += 4) {
       data[i] = Math.round(data[i] * opacity);
     }
 
-    buffer = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+    buffer = await sharp(data, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: 4
+      }
+    }).png().toBuffer();
   }
 
-  // `pad` is how far the shadow/outline canvas grew on each side beyond
-  // the actual logo artwork — callers use it to re-anchor positioning on
-  // the artwork itself rather than the padded box.
   return { buffer, pad };
 }
 
@@ -569,7 +542,10 @@ const MAX_LOGOS = 10;
  */
 async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityPercent, effects = {}, position = "bottom-right", marginPercent = 1.5, gapPercent = 12.5) {
   const referenceDimension = Math.min(baseMeta.width, baseMeta.height);
-  const targetWidth = Math.max(1, Math.round(referenceDimension * (scalePercent / 100)));
+  const targetHeight = Math.max(
+  1,
+  Math.round(referenceDimension * (scalePercent / 100))
+);
   // Edge margin (logo block to image border) stays tied to the base image
   // size, and is now user-adjustable via marginPercent (ignored for center
   // placement, which has no edge to measure from).
@@ -580,7 +556,7 @@ async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityP
   // photo regardless of how large the logos are. All logos share the same
   // targetWidth square box, so this stays consistent across the row.
   // User-adjustable via gapPercent (% of watermark width).
-  const logoGap = Math.max(4, Math.round(targetWidth * (gapPercent / 100)));
+  const logoGap = Math.max(4, Math.round(targetHeight * (gapPercent / 100)));
 
   const isCenter = position === "center";
   const isRight = position === "top-right" || position === "bottom-right";
@@ -600,7 +576,7 @@ async function applyLogos(baseSharp, baseMeta, logoPaths, scalePercent, opacityP
   // start, so we can't position-as-we-go the way the corner layouts do.
   const prepared = [];
   for (const logoPath of ordered) {
-    const { buffer: logoBuffer, pad } = await prepareLogo(logoPath, targetWidth, opacityPercent, effects);
+    const { buffer: logoBuffer, pad } = await prepareLogo(logoPath, targetHeight, opacityPercent, effects);
     const logoMeta = await sharp(logoBuffer).metadata();
     // `logoMeta` describes the padded canvas (artwork + shadow/outline
     // bleed) when effects are on. `artWidth`/`artHeight` are the actual

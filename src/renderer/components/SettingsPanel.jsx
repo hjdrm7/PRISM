@@ -1,7 +1,26 @@
 import React, { useState, useEffect } from "react";
 import LabeledSlider from "./LabeledSlider.jsx";
 import AngleDial from "./AngleDial.jsx";
-import { Layers, Sparkles, Download, X, Sun, Droplet, Wand2, RotateCcw, Save, Trash2, ChevronLeft, ChevronRight, BookMarked, Lightbulb, Waves, GripVertical, Image as ImageIcon, Plus } from "lucide-react";
+import {
+  Layers,
+  Sparkles,
+  Download,
+  X,
+  Sun,
+  Droplet,
+  Wand2,
+  RotateCcw,
+  Save,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  BookMarked,
+  Lightbulb,
+  Waves,
+  GripVertical,
+  Image as ImageIcon,
+  Plus
+} from "lucide-react";
 
 const MAX_LOGOS = 10;
 
@@ -114,14 +133,12 @@ function LogoThumb({
         )}
       </button>
 
-      {/* Order badge, always visible so stacking order is legible without
-          hovering. */}
+      {/* Order badge */}
       <span className="pointer-events-none absolute -left-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-base-700 bg-base-900 text-[9px] font-semibold text-base-400">
         {index + 1}
       </span>
 
-      {/* Remove + drag-handle + reorder arrows, tucked away until hover so
-          the thumbnail grid stays clean at a glance. */}
+      {/* Remove + drag-handle + reorder arrows */}
       <button
         onClick={onRemove}
         title="Remove"
@@ -153,9 +170,6 @@ function LogoThumb({
   );
 }
 
-// Wraps each settings group with a divider (skipped on the first section)
-// and consistent spacing, so groups read as distinct blocks rather than
-// running together.
 function Chevron({ open }) {
   return (
     <svg
@@ -172,9 +186,6 @@ function Chevron({ open }) {
   );
 }
 
-// A small On/Off toggle switch, used in place of a plain text badge so
-// the current state and the "click to change it" affordance are both
-// visible at a glance.
 function SwitchPill({ on, onToggle, label }) {
   return (
     <button
@@ -195,11 +206,6 @@ function SwitchPill({ on, onToggle, label }) {
   );
 }
 
-// A single tab in the horizontal section row. Sections behave like tabs
-// (one open at a time) rather than independent accordions, so the row
-// stays compact and content doesn't stack multiple panels at once. An
-// icon + bottom-border indicator makes the active section unambiguous
-// at a glance, rather than relying on a subtle background tint alone.
 function SectionTab({ title, icon: Icon, badge, active, onClick, pulse, dot }) {
   return (
     <button
@@ -230,9 +236,6 @@ function SectionTab({ title, icon: Icon, badge, active, onClick, pulse, dot }) {
   );
 }
 
-// Small labeled divider above a cluster of related sliders (Tone / Color /
-// Detail), so the 8 manual-enhancement controls read as three scannable
-// groups instead of one undifferentiated stack.
 function SliderGroupHead({ icon: Icon, label, right }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-1.5">
@@ -261,17 +264,9 @@ export default function SettingsPanel({
   const set = (key) => (val) => setConfig((c) => ({ ...c, [key]: val }));
   const logos = config.logos || [];
 
-  // Only one section is open at a time — the tab row stays put and the
-  // content below swaps, rather than every section's content stacking.
-  // Watermarks is open by default so the panel isn't empty on launch —
-  // the person can still collapse it or switch to another section.
   const [activeSection, setActiveSection] = useState("watermarks");
   const toggleSection = (id) => setActiveSection((cur) => (cur === id ? null : id));
 
-  // When App.jsx points us at a section after a validation error (e.g.
-  // "select an output folder" before starting a batch), jump the tab row
-  // there and briefly pulse it so the person's eye lands on the right
-  // control instead of just reading the toast and looking around.
   const [pulseSection, setPulseSection] = useState(null);
   useEffect(() => {
     if (!focusSection) return;
@@ -283,41 +278,73 @@ export default function SettingsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSection]);
 
-  // Shadow/outline options can be collapsed independently of their On/Off
-  // toggle, so turning an effect on doesn't force its panel to stay open —
-  // the person can hide the options while leaving the effect enabled.
-  // Both start collapsed so the Watermarks tab isn't a wall of controls
-  // the moment the app opens — the person expands them on demand.
   const [shadowExpanded, setShadowExpanded] = useState(false);
   const [outlineExpanded, setOutlineExpanded] = useState(false);
+  const [builtInWatermarksExpanded, setBuiltInWatermarksExpanded] = useState(false);
 
-  // Drag-and-drop reorder state for the logo list. dragIndex is the logo
-  // being dragged; dropIndex is whichever row the pointer is currently
-  // over, used only to draw the drop-target outline.
   const [dragIndex, setDragIndex] = useState(null);
   const [dropIndex, setDropIndex] = useState(null);
 
-  // Presets row (Vivid/BW plus any user-saved presets) gets its own boxed,
-  // accent-tinted container and starts open, since presets are a primary
-  // way to apply a look rather than a secondary/advanced option.
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetNameDraft, setPresetNameDraft] = useState("");
-  // Tracks which saved preset (by name) was most recently applied, purely
-  // so the Presets row can highlight it like Vivid/BW/Smart highlight
-  // themselves — this is a session-only convenience, not persisted.
   const [activeCustomPreset, setActiveCustomPreset] = useState(null);
 
-  // Watermark logo presets: save the current set of logos (and their
-  // stacking order) under a name, so a whole multi-logo arrangement can
-  // be reapplied in one click instead of re-adding each file. Mirrors the
-  // enhancement-preset save flow above, but scoped to just the logo list.
-  // Also captures the current placement/appearance sliders (distance from
-  // corner, distance between watermarks, size, opacity, shadow, outline)
-  // so reapplying a preset restores the whole look, not just which files
-  // are loaded.
   const [savingLogoPreset, setSavingLogoPreset] = useState(false);
   const [logoPresetNameDraft, setLogoPresetNameDraft] = useState("");
   const [activeLogoPreset, setActiveLogoPreset] = useState(null);
+
+  const [watermarkPresets, setWatermarkPresets] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPresets = async () => {
+      try {
+        const presets = await window.api?.getWatermarkPresets?.();
+        if (cancelled) return;
+
+        const presetsWithThumbnails = await Promise.all(
+          (presets || []).map(async (preset) => {
+            const thumbnail = await window.api?.getImageThumbnail?.(preset.path);
+            return {
+              ...preset,
+              thumbnail
+            };
+          })
+        );
+
+        if (!cancelled) {
+          setWatermarkPresets(presetsWithThumbnails);
+        }
+      } catch (err) {
+        console.error("[PRISM] Failed to load watermark presets:", err);
+        if (!cancelled) {
+          setWatermarkPresets([]);
+        }
+      }
+    };
+
+    loadPresets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const addWatermarkPreset = (preset) => {
+    if (!preset?.path) return;
+
+    setConfig((c) => {
+      const current = c.logos || [];
+      if (current.includes(preset.path)) return c;
+      if (current.length >= MAX_LOGOS) return c;
+
+      return {
+        ...c,
+        logos: [...current, preset.path]
+      };
+    });
+  };
 
   const WATERMARK_DEFAULTS = {
     logoMarginPercent: 1.5,
@@ -343,20 +370,8 @@ export default function SettingsPanel({
   };
   const showWatermarkResetFooter = activeSection === "watermarks";
 
-  // Which of the three enhancement views (Smart / Presets / Manual) is
-  // showing. Distinct from config.enhancementFilter/enhancementMode —
-  // those describe what the processing pipeline actually does, this is
-  // purely "what's on screen right now". Until the person clicks a tab
-  // themselves, it tracks the underlying filter so the panel opens on
-  // whatever's actually active; once they've clicked, it stays put (e.g.
-  // browsing Presets doesn't get yanked back to Manual just because a
-  // slider underneath hasn't changed).
   const [enhTab, setEnhTab] = useState(null);
 
-  // Lifted out of the enhancement section's render closure (rather than
-  // computed only when that section is open) so a sticky "Reset" footer
-  // pinned to the bottom of the whole panel — outside that section's own
-  // JSX — can still reach current filter/tab state and the reset action.
   const MANUAL_ZEROED = {
     manualTemperature: 0,
     manualTint: 0,
@@ -415,658 +430,250 @@ export default function SettingsPanel({
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-5 [scrollbar-gutter:stable]">
-
-      {activeSection === "watermarks" && (
-      <div className="pb-5">
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className="block text-xs font-medium text-slate-300">Watermarks</label>
-          {logos.length > 0 && (
-            <button
-              onClick={onClearLogos}
-              title="Remove all watermarks"
-              className="text-[11px] font-medium text-base-500 hover:text-red-400"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-        <div className="mb-4 flex flex-wrap gap-3">
-          {logos.map((logoPath, index) => (
-            <LogoThumb
-              key={index}
-              index={index}
-              value={logoPath}
-              onChoose={() => onChooseLogoAt(index)}
-              onRemove={() => onRemoveLogoAt(index)}
-              onMoveUp={() => onMoveLogoAt(index, -1)}
-              onMoveDown={() => onMoveLogoAt(index, 1)}
-              canMoveUp={index > 0}
-              canMoveDown={index < logos.length - 1}
-              isDragging={dragIndex === index}
-              isDropTarget={dropIndex === index && dragIndex !== null && dragIndex !== index}
-              onDragStart={(e) => {
-                setDragIndex(index);
-                e.dataTransfer.effectAllowed = "move";
-                // Firefox requires data to be set for the drag to start.
-                e.dataTransfer.setData("text/plain", String(index));
-              }}
-              onDragOver={(e) => {
-                if (dragIndex === null || dragIndex === index) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                setDropIndex(index);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragIndex !== null && dragIndex !== index) onReorderLogo?.(dragIndex, index);
-                setDragIndex(null);
-                setDropIndex(null);
-              }}
-              onDragEnd={() => {
-                setDragIndex(null);
-                setDropIndex(null);
-              }}
-            />
-          ))}
-
-          {logos.length < MAX_LOGOS && (
-            <button
-              onClick={onAddLogo}
-              title="Add Watermark"
-              className="flex h-16 w-16 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-base-700 text-base-500 hover:border-accent/60 hover:text-accent"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2.25} />
-              <span className="text-[10px] font-medium">Add</span>
-            </button>
-          )}
-        </div>
-
-        {(() => {
-          const logoPresets = config.logoPresets || [];
-
-          const openSaveLogoPreset = () => {
-            setLogoPresetNameDraft("");
-            setSavingLogoPreset(true);
-          };
-          const cancelSaveLogoPreset = () => {
-            setSavingLogoPreset(false);
-            setLogoPresetNameDraft("");
-          };
-          const confirmSaveLogoPreset = () => {
-            const name = logoPresetNameDraft.trim();
-            if (!name || logos.length === 0) return;
-            const adjustments = {};
-            for (const key of WATERMARK_ADJUSTMENT_KEYS) adjustments[key] = config[key];
-            setConfig((c) => ({
-              ...c,
-              logoPresets: [...(c.logoPresets || []), { name, logos: [...(c.logos || [])], adjustments }]
-            }));
-            setActiveLogoPreset(name);
-            setSavingLogoPreset(false);
-            setLogoPresetNameDraft("");
-          };
-          const applyLogoPreset = (preset) => {
-            setActiveLogoPreset(preset.name);
-            setConfig((c) => ({ ...c, logos: [...preset.logos], ...(preset.adjustments || {}) }));
-          };
-          const removeLogoPreset = (index) => {
-            setConfig((c) => ({
-              ...c,
-              logoPresets: (c.logoPresets || []).filter((_, i) => i !== index)
-            }));
-          };
-
-          return (
-            <div className="mb-4">
-              <div className="mb-1.5 flex items-center justify-between">
-                <label className="block text-xs font-medium text-slate-300">Watermark Presets</label>
+        {activeSection === "watermarks" && (
+          <div className="pb-5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-medium text-slate-300">Watermarks</label>
+              {logos.length > 0 && (
                 <button
-                  onClick={openSaveLogoPreset}
-                  disabled={logos.length === 0}
-                  title={logos.length === 0 ? "Add at least one watermark first" : "Save this set of watermarks and its order"}
-                  className="flex items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-[11px] font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={onClearLogos}
+                  title="Remove all watermarks"
+                  className="text-[11px] font-medium text-base-500 hover:text-red-400"
                 >
-                  <Save className="h-3 w-3" strokeWidth={2.25} />
-                  Save Current
+                  Clear all
                 </button>
-              </div>
-
-              {savingLogoPreset && (
-                <div
-                  className="absolute inset-0 z-50 flex justify-center bg-base-950/70 px-4 pt-4 backdrop-blur-sm"
-                  onMouseDown={(e) => {
-                    if (e.target === e.currentTarget) cancelSaveLogoPreset();
+              )}
+            </div>
+            <div className="mb-4 flex flex-wrap gap-3">
+              {logos.map((logoPath, index) => (
+                <LogoThumb
+                  key={index}
+                  index={index}
+                  value={logoPath}
+                  onChoose={() => onChooseLogoAt(index)}
+                  onRemove={() => onRemoveLogoAt(index)}
+                  onMoveUp={() => onMoveLogoAt(index, -1)}
+                  onMoveDown={() => onMoveLogoAt(index, 1)}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < logos.length - 1}
+                  isDragging={dragIndex === index}
+                  isDropTarget={dropIndex === index && dragIndex !== null && dragIndex !== index}
+                  onDragStart={(e) => {
+                    setDragIndex(index);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", String(index));
                   }}
-                >
-                  <div className="h-fit w-80 rounded-2xl border border-base-700 bg-base-900/95 p-4 shadow-2xl">
-                    <p className="mb-3 text-sm font-semibold text-slate-100">Save Watermark Preset</p>
-                    <input
-                      type="text"
-                      autoFocus
-                      value={logoPresetNameDraft}
-                      onChange={(e) => setLogoPresetNameDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") confirmSaveLogoPreset();
-                        if (e.key === "Escape") cancelSaveLogoPreset();
-                      }}
-                      placeholder="Preset name…"
-                      maxLength={40}
-                      className="w-full rounded-lg border border-accent/60 bg-base-950 px-3 py-2 text-sm text-slate-200 placeholder:text-base-600 focus:border-accent focus:outline-none"
-                    />
-                    <p className="mt-2 text-[11px] text-base-500">
-                      Saves the {logos.length} current watermark{logos.length === 1 ? "" : "s"} and their stacking order.
-                    </p>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button
-                        onClick={cancelSaveLogoPreset}
-                        className="rounded-lg border border-base-700 px-3 py-1.5 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={confirmSaveLogoPreset}
-                        disabled={!logoPresetNameDraft.trim()}
-                        className="rounded-lg border border-accent/50 bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-1.5">
-                {logoPresets.map((preset, index) => (
-                  <div
-                    key={`${preset.name}-${index}`}
-                    className={`group flex items-center gap-0.5 rounded-full border pl-2.5 pr-1 py-1 text-xs font-medium hover:border-base-600 ${
-                      activeLogoPreset === preset.name
-                        ? "border-accent bg-accent/15 text-accent"
-                        : "border-base-700 text-slate-400"
-                    }`}
-                  >
-                    <button
-                      onClick={() => applyLogoPreset(preset)}
-                      className="py-0.5 hover:text-slate-200"
-                      title={`${preset.name} — ${preset.logos.length} watermark${preset.logos.length === 1 ? "" : "s"}`}
-                    >
-                      {preset.name}
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (activeLogoPreset === preset.name) setActiveLogoPreset(null);
-                        removeLogoPreset(index);
-                      }}
-                      title="Delete preset"
-                      className="flex-shrink-0 rounded-md p-1 text-base-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-                {logoPresets.length === 0 && (
-                  <p className="py-1 text-[11px] text-base-600">
-                    No saved watermark presets yet — add watermarks above, then "Save Current".
-                  </p>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        <div className="mb-4">
-          <label className="mb-1.5 block text-xs font-medium text-slate-300">Position</label>
-          {(() => {
-            const corners = [
-              { key: "top-left", label: "Upper Left", cls: "top-1.5 left-1.5" },
-              { key: "top", label: "Top", cls: "top-1.5 left-1/2 -translate-x-1/2" },
-              { key: "top-right", label: "Upper Right", cls: "top-1.5 right-1.5" },
-              { key: "left", label: "Left", cls: "top-1/2 left-1.5 -translate-y-1/2" },
-              { key: "center", label: "Center", cls: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
-              { key: "right", label: "Right", cls: "top-1/2 right-1.5 -translate-y-1/2" },
-              { key: "bottom-left", label: "Lower Left", cls: "bottom-1.5 left-1.5" },
-              { key: "bottom", label: "Bottom", cls: "bottom-1.5 left-1/2 -translate-x-1/2" },
-              { key: "bottom-right", label: "Lower Right", cls: "bottom-1.5 right-1.5" }
-            ];
-            const current = config.logoPosition || "bottom-right";
-            return (
-              <div className="flex items-center gap-4">
-                <div className="relative h-20 w-24 flex-shrink-0 rounded-lg border border-base-700 bg-base-950">
-                  {corners.map((c) => (
-                    <button
-                      key={c.key}
-                      onClick={() => set("logoPosition")(c.key)}
-                      title={c.label}
-                      aria-label={c.label}
-                      className={`absolute h-5 w-5 rounded-sm border transition-colors ${c.cls} ${
-                        current === c.key
-                          ? "border-accent bg-accent"
-                          : "border-base-600 bg-base-800 hover:border-base-500"
-                      }`}
-                    />
-                  ))}
-                </div>
-                <div className="text-xs font-medium text-slate-300">
-                  {corners.find((c) => c.key === current)?.label}
-                  <p className="mt-0.5 text-[11px] text-base-500">Click a corner to place the logo</p>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        <div className={config.logoPosition === "center" ? "pointer-events-none opacity-40" : ""}>
-          <LabeledSlider
-            label="Distance from corner"
-            value={config.logoMarginPercent}
-            min={0}
-            max={10}
-            step={0.5}
-            onChange={set("logoMarginPercent")}
-          />
-        </div>
-        <div className={logos.length < 2 ? "pointer-events-none opacity-40" : ""}>
-          <LabeledSlider
-            label="Distance between watermarks"
-            value={config.logoGapPercent}
-            min={0}
-            max={50}
-            step={1}
-            onChange={set("logoGapPercent")}
-          />
-        </div>
-        <LabeledSlider label="Watermark size" value={config.logoScalePercent} min={2} max={40} onChange={set("logoScalePercent")} />
-        <LabeledSlider label="Watermark opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
-
-        <div className="my-4 h-px bg-base-800" />
-
-        <div className="mb-3">
-          <div
-            onClick={() => setShadowExpanded((o) => !o)}
-            role="button"
-            tabIndex={0}
-            aria-expanded={shadowExpanded}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setShadowExpanded((o) => !o);
-              }
-            }}
-            title={shadowExpanded ? "Hide shadow options" : "Show shadow options"}
-            className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className={`leading-none text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>
-                Shadow
-              </span>
-              <span
-                className="flex items-center"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                <SwitchPill
-                  on={!!config.logoShadow}
-                  onToggle={() => set("logoShadow")(!config.logoShadow)}
-                  label="Toggle shadow"
-                />
-              </span>
-            </div>
-            <span className="flex-shrink-0 text-base-500">
-              <Chevron open={shadowExpanded} />
-            </span>
-          </div>
-
-          {shadowExpanded && (
-            <div
-              className={`mt-3 space-y-3 transition-opacity ${
-                config.logoShadow ? "" : "pointer-events-none opacity-40"
-              }`}
-              aria-disabled={!config.logoShadow}
-            >
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300">Shadow color</label>
-                <input
-                  type="color"
-                  value={config.logoShadowColor || "#000000"}
-                  onChange={(e) => set("logoShadowColor")(e.target.value)}
-                  className="h-7 w-10 cursor-pointer rounded border border-base-700 bg-base-900 p-0.5"
-                />
-              </div>
-
-              <LabeledSlider
-                label="Shadow distance"
-                value={config.logoShadowDistancePercent}
-                min={0}
-                max={30}
-                step={0.5}
-                onChange={set("logoShadowDistancePercent")}
-              />
-
-              <LabeledSlider
-                label="Shadow opacity"
-                value={config.logoShadowOpacityPercent ?? 100}
-                min={0}
-                max={100}
-                onChange={set("logoShadowOpacityPercent")}
-              />
-
-              <div className="flex items-center justify-between gap-3">
-                <label className="text-xs font-medium text-slate-300">Shadow angle</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={0}
-                      max={360}
-                      step={1}
-                      value={Math.round(config.logoShadowAngle)}
-                      onChange={(e) => {
-                        const num = Number(e.target.value);
-                        if (!Number.isNaN(num)) set("logoShadowAngle")(Math.min(360, Math.max(0, num)));
-                      }}
-                      className="w-14 rounded-md border border-base-700 bg-base-900 px-1.5 py-0.5 text-right text-xs font-semibold text-accent focus:border-accent focus:outline-none"
-                    />
-                    <span className="text-xs font-semibold text-accent">°</span>
-                  </div>
-                  <AngleDial value={config.logoShadowAngle} onChange={set("logoShadowAngle")} size={56} />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="my-4 h-px bg-base-800" />
-
-        <div className="mb-1">
-          <div
-            onClick={() => setOutlineExpanded((o) => !o)}
-            role="button"
-            tabIndex={0}
-            aria-expanded={outlineExpanded}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setOutlineExpanded((o) => !o);
-              }
-            }}
-            title={outlineExpanded ? "Hide outline options" : "Show outline options"}
-            className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className={`leading-none text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>
-                Outline
-              </span>
-              <span
-                className="flex items-center"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                <SwitchPill
-                  on={!!config.logoOutline}
-                  onToggle={() => set("logoOutline")(!config.logoOutline)}
-                  label="Toggle outline"
-                />
-              </span>
-            </div>
-            <span className="flex-shrink-0 text-base-500">
-              <Chevron open={outlineExpanded} />
-            </span>
-          </div>
-
-          {outlineExpanded && (
-            <div
-              className={`mt-3 space-y-3 transition-opacity ${
-                config.logoOutline ? "" : "pointer-events-none opacity-40"
-              }`}
-              aria-disabled={!config.logoOutline}
-            >
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300">Outline color</label>
-                <input
-                  type="color"
-                  value={config.logoOutlineColor || "#ffffff"}
-                  onChange={(e) => set("logoOutlineColor")(e.target.value)}
-                  className="h-7 w-10 cursor-pointer rounded border border-base-700 bg-base-900 p-0.5"
-                />
-              </div>
-
-              <LabeledSlider
-                label="Outline size"
-                value={config.logoOutlineSizePercent}
-                min={1}
-                max={20}
-                step={0.5}
-                onChange={set("logoOutlineSizePercent")}
-              />
-
-              <LabeledSlider
-                label="Outline opacity"
-                value={config.logoOutlineOpacityPercent ?? 100}
-                min={0}
-                max={100}
-                onChange={set("logoOutlineOpacityPercent")}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-      )}
-
-      {activeSection === "enhancement" && (
-      <div className="pb-5">
-        {(() => {
-          const customPresets = config.customPresets || [];
-
-          const applyFilter = (key) => {
-            setActiveCustomPreset(null);
-            setConfig((c) => ({
-              ...c,
-              enhancementFilter: key,
-              // Explicitly set this on every switch, not just when picking
-              // Vivid/BW: processor.js's dispatch also checks this legacy
-              // field for backward compatibility with settings saved by an
-              // older version of the app, and settings.js merges saved JSON
-              // over the defaults, so a stale "manual" value from an old
-              // settings.json would otherwise never get cleared and would
-              // keep applying Vivid/BW's leftover manual values even after
-              // switching to Smart Enhance.
-              enhancementMode: key === "smart" ? "auto" : "manual",
-              // Smart Enhance has no preset of its own and ignores these
-              // fields when processing, but leaving the last manual values
-              // in config still showed up in the (disabled) sliders when
-              // switching back to Smart — reset them so the UI doesn't
-              // look like leftover settings silently carried over.
-              // "manual" has no preset of its own — it just switches into
-              // manual mode and leaves whatever slider values are already
-              // sitting in config untouched, so tweaking after Vivid/BW
-              // (or a saved preset) doesn't get clobbered.
-              ...(key === "smart" ? MANUAL_ZEROED : FILTER_PRESETS[key] || {})
-            }));
-          };
-
-          const applyCustomPreset = (preset) => {
-            setActiveCustomPreset(preset.name);
-            setConfig((c) => ({
-              ...c,
-              enhancementFilter: "manual",
-              enhancementMode: "manual",
-              ...preset.values
-            }));
-          };
-
-          const openSavePreset = () => {
-            setPresetNameDraft("");
-            setSavingPreset(true);
-          };
-          const cancelSavePreset = () => {
-            setSavingPreset(false);
-            setPresetNameDraft("");
-          };
-          const confirmSavePreset = () => {
-            const name = presetNameDraft.trim();
-            if (!name) return;
-            const values = {
-              manualTemperature: config.manualTemperature ?? 0,
-              manualTint: config.manualTint ?? 0,
-              manualBrightness: config.manualBrightness ?? 0,
-              manualContrast: config.manualContrast ?? 0,
-              manualExposure: config.manualExposure ?? 0,
-              manualHighlights: config.manualHighlights ?? 0,
-              manualShadows: config.manualShadows ?? 0,
-              manualWhites: config.manualWhites ?? 0,
-              manualBlacks: config.manualBlacks ?? 0,
-              manualHue: config.manualHue ?? 0,
-              manualVibrance: config.manualVibrance ?? 0,
-              manualSaturation: config.manualSaturation ?? 0,
-              manualInvert: config.manualInvert ?? false,
-              manualSharpen: config.manualSharpen ?? 0,
-              manualClarity: config.manualClarity ?? 0,
-              manualVignette: config.manualVignette ?? 0
-            };
-            setConfig((c) => ({
-              ...c,
-              customPresets: [...(c.customPresets || []), { name, values }]
-            }));
-            setSavingPreset(false);
-            setPresetNameDraft("");
-          };
-          const removeCustomPreset = (index) => {
-            setConfig((c) => ({
-              ...c,
-              customPresets: (c.customPresets || []).filter((_, i) => i !== index)
-            }));
-          };
-
-          const MODE_TABS = [
-            { key: "smart", label: "Smart Adjust", icon: Sparkles },
-            { key: "presets", label: "Presets", icon: BookMarked },
-            { key: "manual", label: "Manual", icon: Wand2 }
-          ];
-
-          const selectTab = (key) => {
-            setEnhTab(key);
-            // Smart and Manual are actual pipeline modes, so picking their
-            // tab also switches processing — Presets is just a browser/
-            // manager for looks and doesn't change anything by itself
-            // until a specific preset inside it is clicked.
-            if (key === "smart" || key === "manual") applyFilter(key);
-          };
-
-          return (
-            <>
-              <div className="mb-4 grid grid-cols-3 gap-1.5 overflow-hidden rounded-full border border-base-800 bg-base-950 p-1">
-                {MODE_TABS.map(({ key, label, icon: Icon }) => (
-                  <button
-                    key={key}
-                    onClick={() => selectTab(key)}
-                    className={`flex items-center justify-center gap-1.5 rounded-full px-2 py-2 text-xs font-semibold transition-colors ${
-                      effectiveTab === key
-                        ? "bg-accent/15 text-accent"
-                        : "text-slate-400 hover:bg-base-800 hover:text-slate-200"
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {savingPreset && (
-                <div
-                  className="absolute inset-0 z-50 flex justify-center bg-base-950/70 px-4 pt-4 backdrop-blur-sm"
-                  onMouseDown={(e) => {
-                    if (e.target === e.currentTarget) cancelSavePreset();
+                  onDragOver={(e) => {
+                    if (dragIndex === null || dragIndex === index) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDropIndex(index);
                   }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIndex !== null && dragIndex !== index) onReorderLogo?.(dragIndex, index);
+                    setDragIndex(null);
+                    setDropIndex(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragIndex(null);
+                    setDropIndex(null);
+                  }}
+                />
+              ))}
+
+              {logos.length < MAX_LOGOS && (
+                <button
+                  onClick={onAddLogo}
+                  title="Add Watermark"
+                  className="flex h-16 w-16 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-base-700 text-base-500 hover:border-accent/60 hover:text-accent"
                 >
-                  <div className="h-fit w-80 rounded-2xl border border-base-700 bg-base-900/95 p-4 shadow-2xl">
-                    <p className="mb-3 text-sm font-semibold text-slate-100">Save as Preset</p>
-                    <input
-                      type="text"
-                      autoFocus
-                      value={presetNameDraft}
-                      onChange={(e) => setPresetNameDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") confirmSavePreset();
-                        if (e.key === "Escape") cancelSavePreset();
+                  <Plus className="h-4 w-4" strokeWidth={2.25} />
+                  <span className="text-[10px] font-medium">Add</span>
+                </button>
+              )}
+            </div>
+
+            {/* Built-in watermark presets */}
+            <div className="mb-4">
+              <div
+                onClick={() => setBuiltInWatermarksExpanded((open) => !open)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={builtInWatermarksExpanded}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setBuiltInWatermarksExpanded((open) => !open);
+                  }
+                }}
+                title={builtInWatermarksExpanded ? "Hide built-in watermarks" : "Show built-in watermarks"}
+                className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
+              >
+                <span
+                  className={`leading-none text-xs font-semibold ${
+                    builtInWatermarksExpanded ? "text-accent" : "text-slate-300"
+                  }`}
+                >
+                  Built-in Watermarks
+                </span>
+                <span className="flex-shrink-0 text-base-500">
+                  <Chevron open={builtInWatermarksExpanded} />
+                </span>
+              </div>
+
+              {builtInWatermarksExpanded && (
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  {watermarkPresets.map((preset) => {
+                    const selected = logos.includes(preset.path);
+                    return (
+                      <button
+                        key={preset.path}
+                        type="button"
+                        onClick={() => addWatermarkPreset(preset)}
+                        disabled={selected || logos.length >= MAX_LOGOS}
+                        title={selected ? `${preset.name} selected` : `Add ${preset.name}`}
+                        className={`flex h-20 flex-col items-center justify-center rounded-lg border bg-base-900 p-1 transition ${
+                          selected ? "border-accent/60 opacity-50" : "border-base-700 hover:border-accent/60"
+                        }`}
+                      >
+                        <div className="flex h-12 w-full items-center justify-center">
+                          {preset.thumbnail ? (
+                            <img
+                              src={preset.thumbnail}
+                              alt={preset.name}
+                              className="max-h-11 max-w-full object-contain"
+                              draggable={false}
+                            />
+                          ) : (
+                            <ImageIcon className="h-5 w-5 text-base-500" />
+                          )}
+                        </div>
+                        <span className="mt-1 w-full truncate text-center text-[9px] text-base-300">
+                          {preset.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {(() => {
+              const logoPresets = config.logoPresets || [];
+
+              const openSaveLogoPreset = () => {
+                setLogoPresetNameDraft("");
+                setSavingLogoPreset(true);
+              };
+              const cancelSaveLogoPreset = () => {
+                setSavingLogoPreset(false);
+                setLogoPresetNameDraft("");
+              };
+              const confirmSaveLogoPreset = () => {
+                const name = logoPresetNameDraft.trim();
+                if (!name || logos.length === 0) return;
+                const adjustments = {};
+                for (const key of WATERMARK_ADJUSTMENT_KEYS) adjustments[key] = config[key];
+                setConfig((c) => ({
+                  ...c,
+                  logoPresets: [...(c.logoPresets || []), { name, logos: [...(c.logos || [])], adjustments }]
+                }));
+                setActiveLogoPreset(name);
+                setSavingLogoPreset(false);
+                setLogoPresetNameDraft("");
+              };
+              const applyLogoPreset = (preset) => {
+                setActiveLogoPreset(preset.name);
+                setConfig((c) => ({ ...c, logos: [...preset.logos], ...(preset.adjustments || {}) }));
+              };
+              const removeLogoPreset = (index) => {
+                setConfig((c) => ({
+                  ...c,
+                  logoPresets: (c.logoPresets || []).filter((_, i) => i !== index)
+                }));
+              };
+
+              return (
+                <div className="mb-4">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="block text-xs font-medium text-slate-300">Watermark Presets</label>
+                    <button
+                      onClick={openSaveLogoPreset}
+                      disabled={logos.length === 0}
+                      title={logos.length === 0 ? "Add at least one watermark first" : "Save this set of watermarks and its order"}
+                      className="flex items-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-[11px] font-medium text-slate-400 hover:border-base-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Save className="h-3 w-3" strokeWidth={2.25} />
+                      Save Current
+                    </button>
+                  </div>
+
+                  {savingLogoPreset && (
+                    <div
+                      className="absolute inset-0 z-50 flex justify-center bg-base-950/70 px-4 pt-4 backdrop-blur-sm"
+                      onMouseDown={(e) => {
+                        if (e.target === e.currentTarget) cancelSaveLogoPreset();
                       }}
-                      placeholder="Preset name…"
-                      maxLength={40}
-                      className="w-full rounded-lg border border-accent/60 bg-base-950 px-3 py-2 text-sm text-slate-200 placeholder:text-base-600 focus:border-accent focus:outline-none"
-                    />
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button
-                        onClick={cancelSavePreset}
-                        className="rounded-lg border border-base-700 px-3 py-1.5 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={confirmSavePreset}
-                        disabled={!presetNameDraft.trim()}
-                        className="rounded-lg border border-accent/50 bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Save
-                      </button>
+                    >
+                      <div className="h-fit w-80 rounded-2xl border border-base-700 bg-base-900/95 p-4 shadow-2xl">
+                        <p className="mb-3 text-sm font-semibold text-slate-100">Save Watermark Preset</p>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={logoPresetNameDraft}
+                          onChange={(e) => setLogoPresetNameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") confirmSaveLogoPreset();
+                            if (e.key === "Escape") cancelSaveLogoPreset();
+                          }}
+                          placeholder="Preset name…"
+                          maxLength={40}
+                          className="w-full rounded-lg border border-accent/60 bg-base-950 px-3 py-2 text-sm text-slate-200 placeholder:text-base-600 focus:border-accent focus:outline-none"
+                        />
+                        <p className="mt-2 text-[11px] text-base-500">
+                          Saves the {logos.length} current watermark{logos.length === 1 ? "" : "s"} and their stacking order.
+                        </p>
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button
+                            onClick={cancelSaveLogoPreset}
+                            className="rounded-lg border border-base-700 px-3 py-1.5 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={confirmSaveLogoPreset}
+                            disabled={!logoPresetNameDraft.trim()}
+                            className="rounded-lg border border-accent/50 bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
-
-              {effectiveTab === "smart" && (
-                <div className="flex flex-col items-center gap-2 rounded-xl2 border border-base-800 px-4 py-8 text-center">
-                  <Sparkles className="h-6 w-6 text-accent" strokeWidth={1.75} />
-                  <p className="text-sm font-semibold text-slate-100">PRISM decides, per photo</p>
-                  <p className="max-w-[22rem] text-xs text-base-500">
-                    Auto-exposure, white balance, local contrast, noise reduction, saturation, and sharpening are all
-                    tuned automatically for each image — there's nothing to adjust here. Switch to Presets for a
-                    one-click look, or Manual to fine-tune every value by hand.
-                  </p>
-                </div>
-              )}
-
-              {effectiveTab === "presets" && (
-                <div>
-                  <div className="mb-3">
-                    <p className="text-xs text-base-500">Apply a look, or save your a new one.</p>
-                  </div>
+                  )}
 
                   <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => applyFilter("vivid")}
-                      className={`rounded-full border px-10 py-1.5 text-xs font-medium transition-colors ${
-                        currentFilter === "vivid"
-                          ? "border-accent bg-accent/15 text-accent"
-                          : "border-base-700 text-slate-400 hover:border-base-600"
-                      }`}
-                    >
-                      Vivid
-                    </button>
-                    <button
-                      onClick={() => applyFilter("bw")}
-                      className={`rounded-full border px-10 py-1.5 text-xs font-medium transition-colors ${
-                        currentFilter === "bw"
-                          ? "border-accent bg-accent/15 text-accent"
-                          : "border-base-700 text-slate-400 hover:border-base-600"
-                      }`}
-                    >
-                      B/W
-                    </button>
-                    {customPresets.map((preset, index) => (
+                    {logoPresets.map((preset, index) => (
                       <div
                         key={`${preset.name}-${index}`}
                         className={`group flex items-center gap-0.5 rounded-full border pl-2.5 pr-1 py-1 text-xs font-medium hover:border-base-600 ${
-                          activeCustomPreset === preset.name
+                          activeLogoPreset === preset.name
                             ? "border-accent bg-accent/15 text-accent"
                             : "border-base-700 text-slate-400"
                         }`}
                       >
-                        <button onClick={() => applyCustomPreset(preset)} className="py-0.5 hover:text-slate-200" title={preset.name}>
+                        <button
+                          onClick={() => applyLogoPreset(preset)}
+                          className="py-0.5 hover:text-slate-200"
+                          title={`${preset.name} — ${preset.logos.length} watermark${preset.logos.length === 1 ? "" : "s"}`}
+                        >
                           {preset.name}
                         </button>
                         <button
                           onClick={() => {
-                            if (activeCustomPreset === preset.name) setActiveCustomPreset(null);
-                            removeCustomPreset(index);
+                            if (activeLogoPreset === preset.name) setActiveLogoPreset(null);
+                            removeLogoPreset(index);
                           }}
                           title="Delete preset"
                           className="flex-shrink-0 rounded-md p-1 text-base-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
@@ -1075,230 +682,680 @@ export default function SettingsPanel({
                         </button>
                       </div>
                     ))}
-                    {customPresets.length === 0 && (
-                      <p className="py-1 text-[11px] text-base-600">No saved presets yet — adjust sliders in Manual, then "Save Current".</p>
+                    {logoPresets.length === 0 && (
+                      <p className="py-1 text-[11px] text-base-600">
+                        No saved watermark presets yet — add watermarks above, then "Save Current".
+                      </p>
                     )}
                   </div>
-
-                  {(currentFilter === "vivid" || currentFilter === "bw" || activeCustomPreset) && (
-                    <p className="mt-2 text-[11px] text-base-500">
-                      Applied — switch to Manual to fine-tune these values further.
-                    </p>
-                  )}
                 </div>
-              )}
+              );
+            })()}
 
-              {effectiveTab === "manual" && (
-                <div>
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-xs text-base-500">Tone, color, and detail — adjust freely.</p>
-                    <button
-                      onClick={openSavePreset}
-                      className="flex w-[148px] flex-shrink-0 items-center justify-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
-                    >
-                      <Save className="h-3 w-3" strokeWidth={2.25} />
-                      Save as Preset
-                    </button>
+            <div className="mb-4">
+              <label className="mb-1.5 block text-xs font-medium text-slate-300">Position</label>
+              {(() => {
+                const corners = [
+                  { key: "top-left", label: "Upper Left", cls: "top-1.5 left-1.5" },
+                  { key: "top", label: "Top", cls: "top-1.5 left-1/2 -translate-x-1/2" },
+                  { key: "top-right", label: "Upper Right", cls: "top-1.5 right-1.5" },
+                  { key: "left", label: "Left", cls: "top-1/2 left-1.5 -translate-y-1/2" },
+                  { key: "center", label: "Center", cls: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
+                  { key: "right", label: "Right", cls: "top-1/2 right-1.5 -translate-y-1/2" },
+                  { key: "bottom-left", label: "Lower Left", cls: "bottom-1.5 left-1.5" },
+                  { key: "bottom", label: "Bottom", cls: "bottom-1.5 left-1/2 -translate-x-1/2" },
+                  { key: "bottom-right", label: "Lower Right", cls: "bottom-1.5 right-1.5" }
+                ];
+                const current = config.logoPosition || "bottom-right";
+                return (
+                  <div className="flex items-center gap-4">
+                    <div className="relative h-20 w-24 flex-shrink-0 rounded-lg border border-base-700 bg-base-950">
+                      {corners.map((c) => (
+                        <button
+                          key={c.key}
+                          onClick={() => set("logoPosition")(c.key)}
+                          title={c.label}
+                          aria-label={c.label}
+                          className={`absolute h-5 w-5 rounded-sm border transition-colors ${c.cls} ${
+                            current === c.key
+                              ? "border-accent bg-accent"
+                              : "border-base-600 bg-base-800 hover:border-base-500"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <div className="text-xs font-medium text-slate-300">
+                      {corners.find((c) => c.key === current)?.label}
+                      <p className="mt-0.5 text-[11px] text-base-500">Click a corner to place the logo</p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className={config.logoPosition === "center" ? "pointer-events-none opacity-40" : ""}>
+              <LabeledSlider
+                label="Distance from corner"
+                value={config.logoMarginPercent}
+                min={0}
+                max={10}
+                step={0.5}
+                onChange={set("logoMarginPercent")}
+              />
+            </div>
+            <div className={logos.length < 2 ? "pointer-events-none opacity-40" : ""}>
+              <LabeledSlider
+                label="Distance between watermarks"
+                value={config.logoGapPercent}
+                min={0}
+                max={50}
+                step={1}
+                onChange={set("logoGapPercent")}
+              />
+            </div>
+            <LabeledSlider label="Watermark size" value={config.logoScalePercent} min={2} max={40} onChange={set("logoScalePercent")} />
+            <LabeledSlider label="Watermark opacity" value={config.logoOpacityPercent} min={0} max={100} onChange={set("logoOpacityPercent")} />
+
+            <div className="my-4 h-px bg-base-800" />
+
+            <div className="mb-3">
+              <div
+                onClick={() => setShadowExpanded((o) => !o)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={shadowExpanded}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setShadowExpanded((o) => !o);
+                  }
+                }}
+                title={shadowExpanded ? "Hide shadow options" : "Show shadow options"}
+                className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className={`leading-none text-xs font-semibold ${config.logoShadow ? "text-accent" : "text-slate-300"}`}>
+                    Shadow
+                  </span>
+                  <span
+                    className="flex items-center"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <SwitchPill
+                      on={!!config.logoShadow}
+                      onToggle={() => set("logoShadow")(!config.logoShadow)}
+                      label="Toggle shadow"
+                    />
+                  </span>
+                </div>
+                <span className="flex-shrink-0 text-base-500">
+                  <Chevron open={shadowExpanded} />
+                </span>
+              </div>
+
+              {shadowExpanded && (
+                <div
+                  className={`mt-3 space-y-3 transition-opacity ${
+                    config.logoShadow ? "" : "pointer-events-none opacity-40"
+                  }`}
+                  aria-disabled={!config.logoShadow}
+                >
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-300">Shadow color</label>
+                    <input
+                      type="color"
+                      value={config.logoShadowColor || "#000000"}
+                      onChange={(e) => set("logoShadowColor")(e.target.value)}
+                      className="h-7 w-10 cursor-pointer rounded border border-base-700 bg-base-900 p-0.5"
+                    />
                   </div>
 
-                  <SliderGroupHead icon={Lightbulb} label="White Balance" />
                   <LabeledSlider
-                    label="Temperature"
-                    value={config.manualTemperature ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualTemperature")}
-                  />
-                  <LabeledSlider
-                    label="Tint"
-                    value={config.manualTint ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualTint")}
+                    label="Shadow distance"
+                    value={config.logoShadowDistancePercent}
+                    min={0}
+                    max={30}
+                    step={0.5}
+                    onChange={set("logoShadowDistancePercent")}
                   />
 
-                  <div className="my-4 h-px bg-base-800" />
-                  <SliderGroupHead icon={Sun} label="Light" />
                   <LabeledSlider
-                    label="Brightness"
-                    value={config.manualBrightness ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualBrightness")}
-                  />
-                  <LabeledSlider
-                    label="Contrast"
-                    value={config.manualContrast ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualContrast")}
-                  />
-                  <LabeledSlider
-                    label="Highlights"
-                    value={config.manualHighlights ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualHighlights")}
-                  />
-                  <LabeledSlider
-                    label="Shadows"
-                    value={config.manualShadows ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualShadows")}
-                  />
-                  <LabeledSlider
-                    label="Whites"
-                    value={config.manualWhites ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualWhites")}
-                  />
-                  <LabeledSlider
-                    label="Blacks"
-                    value={config.manualBlacks ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualBlacks")}
-                  />
-
-                  <div className="my-4 h-px bg-base-800" />
-                  <SliderGroupHead
-                    icon={Droplet}
-                    label="Color"
-                    right={
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-base-500">Invert</span>
-                        <SwitchPill
-                          on={!!config.manualInvert}
-                          onToggle={() => set("manualInvert")(!config.manualInvert)}
-                          label="Toggle invert"
-                        />
-                      </div>
-                    }
-                  />
-                  <LabeledSlider label="Hue" value={config.manualHue ?? 0} min={-180} max={180} unit="°" onChange={set("manualHue")} />
-                  <LabeledSlider
-                    label="Vibrance"
-                    value={config.manualVibrance ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualVibrance")}
-                  />
-                  <LabeledSlider
-                    label="Saturation"
-                    value={config.manualSaturation ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualSaturation")}
-                  />
-
-                  <div className="my-4 h-px bg-base-800" />
-                  <SliderGroupHead icon={Waves} label="Texture" />
-                  <LabeledSlider
-                    label="Sharpness"
-                    value={config.manualSharpen ?? 0}
+                    label="Shadow opacity"
+                    value={config.logoShadowOpacityPercent ?? 100}
                     min={0}
                     max={100}
-                    onChange={set("manualSharpen")}
+                    onChange={set("logoShadowOpacityPercent")}
                   />
+
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-xs font-medium text-slate-300">Shadow angle</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          max={360}
+                          step={1}
+                          value={Math.round(config.logoShadowAngle)}
+                          onChange={(e) => {
+                            const num = Number(e.target.value);
+                            if (!Number.isNaN(num)) set("logoShadowAngle")(Math.min(360, Math.max(0, num)));
+                          }}
+                          className="w-14 rounded-md border border-base-700 bg-base-900 px-1.5 py-0.5 text-right text-xs font-semibold text-accent focus:border-accent focus:outline-none"
+                        />
+                        <span className="text-xs font-semibold text-accent">°</span>
+                      </div>
+                      <AngleDial value={config.logoShadowAngle} onChange={set("logoShadowAngle")} size={56} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="my-4 h-px bg-base-800" />
+
+            <div className="mb-1">
+              <div
+                onClick={() => setOutlineExpanded((o) => !o)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={outlineExpanded}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setOutlineExpanded((o) => !o);
+                  }
+                }}
+                title={outlineExpanded ? "Hide outline options" : "Show outline options"}
+                className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className={`leading-none text-xs font-semibold ${config.logoOutline ? "text-accent" : "text-slate-300"}`}>
+                    Outline
+                  </span>
+                  <span
+                    className="flex items-center"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <SwitchPill
+                      on={!!config.logoOutline}
+                      onToggle={() => set("logoOutline")(!config.logoOutline)}
+                      label="Toggle outline"
+                    />
+                  </span>
+                </div>
+                <span className="flex-shrink-0 text-base-500">
+                  <Chevron open={outlineExpanded} />
+                </span>
+              </div>
+
+              {outlineExpanded && (
+                <div
+                  className={`mt-3 space-y-3 transition-opacity ${
+                    config.logoOutline ? "" : "pointer-events-none opacity-40"
+                  }`}
+                  aria-disabled={!config.logoOutline}
+                >
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-300">Outline color</label>
+                    <input
+                      type="color"
+                      value={config.logoOutlineColor || "#ffffff"}
+                      onChange={(e) => set("logoOutlineColor")(e.target.value)}
+                      className="h-7 w-10 cursor-pointer rounded border border-base-700 bg-base-900 p-0.5"
+                    />
+                  </div>
+
                   <LabeledSlider
-                    label="Clarity"
-                    value={config.manualClarity ?? 0}
-                    min={-100}
-                    max={100}
-                    onChange={set("manualClarity")}
+                    label="Outline size"
+                    value={config.logoOutlineSizePercent}
+                    min={1}
+                    max={20}
+                    step={0.5}
+                    onChange={set("logoOutlineSizePercent")}
                   />
+
                   <LabeledSlider
-                    label="Vignette"
-                    value={config.manualVignette ?? 0}
-                    min={-100}
+                    label="Outline opacity"
+                    value={config.logoOutlineOpacityPercent ?? 100}
+                    min={0}
                     max={100}
-                    onChange={set("manualVignette")}
+                    onChange={set("logoOutlineOpacityPercent")}
                   />
                 </div>
               )}
-            </>
-          );
-        })()}
-      </div>
-      )}
-
-      {activeSection === "output" && (
-      <div className="pb-5">
-        <div className="mb-4">
-          <label className="mb-1.5 block text-xs font-medium text-slate-300">Output folder</label>
-          <button
-            onClick={onChooseOutputFolder}
-            className="w-full truncate rounded-lg border border-base-700 bg-base-900 px-3 py-2 text-left text-xs text-slate-300 hover:border-accent/50"
-            title={config.outputFolder}
-          >
-            {config.outputFolder || "Choose folder…"}
-          </button>
-        </div>
-
-        <div className="mb-4">
-          <label className="mb-1.5 block text-xs font-medium text-slate-300">Save as</label>
-          <div className="flex gap-1.5">
-            {[
-              { key: "original", label: "Original" },
-              { key: "jpeg", label: "JPEG" },
-              { key: "png", label: "PNG" }
-            ].map((opt) => (
-              <button
-                key={opt.key}
-                onClick={() => set("outputFormat")(opt.key)}
-                className={`flex-1 rounded-full border px-2 py-1.5 text-xs font-medium transition-colors ${
-                  (config.outputFormat || "original") === opt.key
-                    ? "border-accent bg-accent/15 text-accent"
-                    : "border-base-700 text-slate-400 hover:border-base-600"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="mb-4">
-          <label className="mb-1.5 block text-xs font-medium text-slate-300">Append to filename</label>
-          <input
-            type="text"
-            value={config.filenameSuffix || ""}
-            onChange={(e) => set("filenameSuffix")(e.target.value)}
-            placeholder="e.g. _edited, _v2, -01"
-            maxLength={40}
-            className="w-full rounded-lg border border-base-700 bg-base-900 px-3 py-2 text-xs text-slate-300 placeholder:text-base-600 focus:border-accent focus:outline-none"
-          />
-          <p className="mt-1 text-xs text-base-500">
-            Added before the extension, e.g. photo{config.filenameSuffix || "_edited"}.jpg
-          </p>
-        </div>
+        {activeSection === "enhancement" && (
+          <div className="pb-5">
+            {(() => {
+              const customPresets = config.customPresets || [];
 
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-300">If file exists</label>
-          <div className="flex gap-1.5">
-            {[
-              { key: "rename", label: "Rename" },
-              { key: "overwrite", label: "Overwrite" },
-              { key: "skip", label: "Skip" }
-            ].map((opt) => (
-              <button
-                key={opt.key}
-                onClick={() => set("collisionStrategy")(opt.key)}
-                className={`flex-1 rounded-full border px-2 py-1.5 text-xs font-medium transition-colors ${
-                  config.collisionStrategy === opt.key
-                    ? "border-accent bg-accent/15 text-accent"
-                    : "border-base-700 text-slate-400 hover:border-base-600"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+              const applyFilter = (key) => {
+                setActiveCustomPreset(null);
+                setConfig((c) => ({
+                  ...c,
+                  enhancementFilter: key,
+                  enhancementMode: key === "smart" ? "auto" : "manual",
+                  ...(key === "smart" ? MANUAL_ZEROED : FILTER_PRESETS[key] || {})
+                }));
+              };
+
+              const applyCustomPreset = (preset) => {
+                setActiveCustomPreset(preset.name);
+                setConfig((c) => ({
+                  ...c,
+                  enhancementFilter: "manual",
+                  enhancementMode: "manual",
+                  ...preset.values
+                }));
+              };
+
+              const openSavePreset = () => {
+                setPresetNameDraft("");
+                setSavingPreset(true);
+              };
+              const cancelSavePreset = () => {
+                setSavingPreset(false);
+                setPresetNameDraft("");
+              };
+              const confirmSavePreset = () => {
+                const name = presetNameDraft.trim();
+                if (!name) return;
+                const values = {
+                  manualTemperature: config.manualTemperature ?? 0,
+                  manualTint: config.manualTint ?? 0,
+                  manualBrightness: config.manualBrightness ?? 0,
+                  manualContrast: config.manualContrast ?? 0,
+                  manualExposure: config.manualExposure ?? 0,
+                  manualHighlights: config.manualHighlights ?? 0,
+                  manualShadows: config.manualShadows ?? 0,
+                  manualWhites: config.manualWhites ?? 0,
+                  manualBlacks: config.manualBlacks ?? 0,
+                  manualHue: config.manualHue ?? 0,
+                  manualVibrance: config.manualVibrance ?? 0,
+                  manualSaturation: config.manualSaturation ?? 0,
+                  manualInvert: config.manualInvert ?? false,
+                  manualSharpen: config.manualSharpen ?? 0,
+                  manualClarity: config.manualClarity ?? 0,
+                  manualVignette: config.manualVignette ?? 0
+                };
+                setConfig((c) => ({
+                  ...c,
+                  customPresets: [...(c.customPresets || []), { name, values }]
+                }));
+                setSavingPreset(false);
+                setPresetNameDraft("");
+              };
+              const removeCustomPreset = (index) => {
+                setConfig((c) => ({
+                  ...c,
+                  customPresets: (c.customPresets || []).filter((_, i) => i !== index)
+                }));
+              };
+
+              const MODE_TABS = [
+                { key: "smart", label: "Smart Adjust", icon: Sparkles },
+                { key: "presets", label: "Presets", icon: BookMarked },
+                { key: "manual", label: "Manual", icon: Wand2 }
+              ];
+
+              const selectTab = (key) => {
+                setEnhTab(key);
+                if (key === "smart" || key === "manual") applyFilter(key);
+              };
+
+              return (
+                <>
+                  <div className="mb-4 grid grid-cols-3 gap-1.5 overflow-hidden rounded-full border border-base-800 bg-base-950 p-1">
+                    {MODE_TABS.map(({ key, label, icon: Icon }) => (
+                      <button
+                        key={key}
+                        onClick={() => selectTab(key)}
+                        className={`flex items-center justify-center gap-1.5 rounded-full px-2 py-2 text-xs font-semibold transition-colors ${
+                          effectiveTab === key
+                            ? "bg-accent/15 text-accent"
+                            : "text-slate-400 hover:bg-base-800 hover:text-slate-200"
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {savingPreset && (
+                    <div
+                      className="absolute inset-0 z-50 flex justify-center bg-base-950/70 px-4 pt-4 backdrop-blur-sm"
+                      onMouseDown={(e) => {
+                        if (e.target === e.currentTarget) cancelSavePreset();
+                      }}
+                    >
+                      <div className="h-fit w-80 rounded-2xl border border-base-700 bg-base-900/95 p-4 shadow-2xl">
+                        <p className="mb-3 text-sm font-semibold text-slate-100">Save as Preset</p>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={presetNameDraft}
+                          onChange={(e) => setPresetNameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") confirmSavePreset();
+                            if (e.key === "Escape") cancelSavePreset();
+                          }}
+                          placeholder="Preset name…"
+                          maxLength={40}
+                          className="w-full rounded-lg border border-accent/60 bg-base-950 px-3 py-2 text-sm text-slate-200 placeholder:text-base-600 focus:border-accent focus:outline-none"
+                        />
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button
+                            onClick={cancelSavePreset}
+                            className="rounded-lg border border-base-700 px-3 py-1.5 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={confirmSavePreset}
+                            disabled={!presetNameDraft.trim()}
+                            className="rounded-lg border border-accent/50 bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {effectiveTab === "smart" && (
+                    <div className="flex flex-col items-center gap-2 rounded-2xl border border-base-800 px-4 py-8 text-center">
+                      <Sparkles className="h-6 w-6 text-accent" strokeWidth={1.75} />
+                      <p className="text-sm font-semibold text-slate-100">PRISM decides, per photo</p>
+                      <p className="max-w-[22rem] text-xs text-base-500">
+                        Auto-exposure, white balance, local contrast, noise reduction, saturation, and sharpening are all
+                        tuned automatically for each image — there's nothing to adjust here. Switch to Presets for a
+                        one-click look, or Manual to fine-tune every value by hand.
+                      </p>
+                    </div>
+                  )}
+
+                  {effectiveTab === "presets" && (
+                    <div>
+                      <div className="mb-3">
+                        <p className="text-xs text-base-500">Apply a look, or save a new one.</p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          onClick={() => applyFilter("vivid")}
+                          className={`rounded-full border px-10 py-1.5 text-xs font-medium transition-colors ${
+                            currentFilter === "vivid"
+                              ? "border-accent bg-accent/15 text-accent"
+                              : "border-base-700 text-slate-400 hover:border-base-600"
+                          }`}
+                        >
+                          Vivid
+                        </button>
+                        <button
+                          onClick={() => applyFilter("bw")}
+                          className={`rounded-full border px-10 py-1.5 text-xs font-medium transition-colors ${
+                            currentFilter === "bw"
+                              ? "border-accent bg-accent/15 text-accent"
+                              : "border-base-700 text-slate-400 hover:border-base-600"
+                          }`}
+                        >
+                          B/W
+                        </button>
+                        {customPresets.map((preset, index) => (
+                          <div
+                            key={`${preset.name}-${index}`}
+                            className={`group flex items-center gap-0.5 rounded-full border pl-2.5 pr-1 py-1 text-xs font-medium hover:border-base-600 ${
+                              activeCustomPreset === preset.name
+                                ? "border-accent bg-accent/15 text-accent"
+                                : "border-base-700 text-slate-400"
+                            }`}
+                          >
+                            <button onClick={() => applyCustomPreset(preset)} className="py-0.5 hover:text-slate-200" title={preset.name}>
+                              {preset.name}
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (activeCustomPreset === preset.name) setActiveCustomPreset(null);
+                                removeCustomPreset(index);
+                              }}
+                              title="Delete preset"
+                              className="flex-shrink-0 rounded-md p-1 text-base-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {customPresets.length === 0 && (
+                          <p className="py-1 text-[11px] text-base-600">No saved presets yet — adjust sliders in Manual, then "Save Current".</p>
+                        )}
+                      </div>
+
+                      {(currentFilter === "vivid" || currentFilter === "bw" || activeCustomPreset) && (
+                        <p className="mt-2 text-[11px] text-base-500">
+                          Applied — switch to Manual to fine-tune these values further.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {effectiveTab === "manual" && (
+                    <div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-xs text-base-500">Tone, color, and detail — adjust freely.</p>
+                        <button
+                          onClick={openSavePreset}
+                          className="flex w-[148px] flex-shrink-0 items-center justify-center gap-1 rounded-lg border border-base-700 px-2 py-1 text-xs font-medium text-slate-400 hover:border-base-600 hover:text-slate-200"
+                        >
+                          <Save className="h-3 w-3" strokeWidth={2.25} />
+                          Save as Preset
+                        </button>
+                      </div>
+
+                      <SliderGroupHead icon={Lightbulb} label="White Balance" />
+                      <LabeledSlider
+                        label="Temperature"
+                        value={config.manualTemperature ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualTemperature")}
+                      />
+                      <LabeledSlider
+                        label="Tint"
+                        value={config.manualTint ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualTint")}
+                      />
+
+                      <div className="my-4 h-px bg-base-800" />
+                      <SliderGroupHead icon={Sun} label="Light" />
+                      <LabeledSlider
+                        label="Brightness"
+                        value={config.manualBrightness ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualBrightness")}
+                      />
+                      <LabeledSlider
+                        label="Contrast"
+                        value={config.manualContrast ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualContrast")}
+                      />
+                      <LabeledSlider
+                        label="Highlights"
+                        value={config.manualHighlights ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualHighlights")}
+                      />
+                      <LabeledSlider
+                        label="Shadows"
+                        value={config.manualShadows ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualShadows")}
+                      />
+                      <LabeledSlider
+                        label="Whites"
+                        value={config.manualWhites ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualWhites")}
+                      />
+                      <LabeledSlider
+                        label="Blacks"
+                        value={config.manualBlacks ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualBlacks")}
+                      />
+
+                      <div className="my-4 h-px bg-base-800" />
+                      <SliderGroupHead
+                        icon={Droplet}
+                        label="Color"
+                        right={
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-base-500">Invert</span>
+                            <SwitchPill
+                              on={!!config.manualInvert}
+                              onToggle={() => set("manualInvert")(!config.manualInvert)}
+                              label="Toggle invert"
+                            />
+                          </div>
+                        }
+                      />
+                      <LabeledSlider label="Hue" value={config.manualHue ?? 0} min={-180} max={180} unit="°" onChange={set("manualHue")} />
+                      <LabeledSlider
+                        label="Vibrance"
+                        value={config.manualVibrance ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualVibrance")}
+                      />
+                      <LabeledSlider
+                        label="Saturation"
+                        value={config.manualSaturation ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualSaturation")}
+                      />
+
+                      <div className="my-4 h-px bg-base-800" />
+                      <SliderGroupHead icon={Waves} label="Texture" />
+                      <LabeledSlider
+                        label="Sharpness"
+                        value={config.manualSharpen ?? 0}
+                        min={0}
+                        max={100}
+                        onChange={set("manualSharpen")}
+                      />
+                      <LabeledSlider
+                        label="Clarity"
+                        value={config.manualClarity ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualClarity")}
+                      />
+                      <LabeledSlider
+                        label="Vignette"
+                        value={config.manualVignette ?? 0}
+                        min={-100}
+                        max={100}
+                        onChange={set("manualVignette")}
+                      />
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
-        </div>
-      </div>
-      )}
+        )}
+
+        {activeSection === "output" && (
+          <div className="pb-5">
+            <div className="mb-4">
+              <label className="mb-1.5 block text-xs font-medium text-slate-300">Output folder</label>
+              <button
+                onClick={onChooseOutputFolder}
+                className="w-full truncate rounded-lg border border-base-700 bg-base-900 px-3 py-2 text-left text-xs text-slate-300 hover:border-accent/50"
+                title={config.outputFolder}
+              >
+                {config.outputFolder || "Choose folder…"}
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="mb-1.5 block text-xs font-medium text-slate-300">Save as</label>
+              <div className="flex gap-1.5">
+                {[
+                  { key: "original", label: "Original" },
+                  { key: "jpeg", label: "JPEG" },
+                  { key: "png", label: "PNG" }
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => set("outputFormat")(opt.key)}
+                    className={`flex-1 rounded-full border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      (config.outputFormat || "original") === opt.key
+                        ? "border-accent bg-accent/15 text-accent"
+                        : "border-base-700 text-slate-400 hover:border-base-600"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="mb-1.5 block text-xs font-medium text-slate-300">Append to filename</label>
+              <input
+                type="text"
+                value={config.filenameSuffix || ""}
+                onChange={(e) => set("filenameSuffix")(e.target.value)}
+                placeholder="e.g. _edited, _v2, -01"
+                maxLength={40}
+                className="w-full rounded-lg border border-base-700 bg-base-900 px-3 py-2 text-xs text-slate-300 placeholder:text-base-600 focus:border-accent focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-base-500">
+                Added before the extension, e.g. photo{config.filenameSuffix || "_edited"}.jpg
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-slate-300">If file exists</label>
+              <div className="flex gap-1.5">
+                {[
+                  { key: "rename", label: "Rename" },
+                  { key: "overwrite", label: "Overwrite" },
+                  { key: "skip", label: "Skip" }
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => set("collisionStrategy")(opt.key)}
+                    className={`flex-1 rounded-full border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      config.collisionStrategy === opt.key
+                        ? "border-accent bg-accent/15 text-accent"
+                        : "border-base-700 text-slate-400 hover:border-base-600"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {showManualResetFooter && (

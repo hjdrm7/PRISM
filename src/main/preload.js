@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("api", {
   chooseLogoImage: (defaultPath, multiple) => ipcRenderer.invoke("dialog:choose-image", defaultPath, multiple),
   listImages: (folderPath) => ipcRenderer.invoke("fs:list-images", folderPath),
   getImageThumbnail: (filePath) => ipcRenderer.invoke("fs:image-thumbnail", filePath),
+  getWatermarkPresets: () => ipcRenderer.invoke("watermarks:list-presets"),
 
   loadSettings: () => ipcRenderer.invoke("settings:load"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),

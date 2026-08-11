@@ -1,7 +1,7 @@
 {
   "name": "PRISM",
   "productName": "PRISM",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "description": "Batch event-photo enhancer and watermark stamper.",
   "main": "src/main/main.js",
   "scripts": {
@@ -32,7 +32,7 @@
     "vite": "^5.2.11",
     "wait-on": "^7.2.0"
   },
-  "build": {
+"build": {
     "appId": "org.prism.photoprocessor",
     "productName": "PRISM",
     "files": [
@@ -41,6 +41,12 @@
       "build/icon.png",
       "build/icon.ico",
       "node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "src/renderer/assets/Watermarks",
+        "to": "Watermarks"
+      }
     ],
     "win": {
       "target": [
