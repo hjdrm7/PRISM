@@ -619,15 +619,19 @@ export default function SettingsPanel({
           {(() => {
             const corners = [
               { key: "top-left", label: "Upper Left", cls: "top-1.5 left-1.5" },
+              { key: "top", label: "Top", cls: "top-1.5 left-1/2 -translate-x-1/2" },
               { key: "top-right", label: "Upper Right", cls: "top-1.5 right-1.5" },
+              { key: "left", label: "Left", cls: "top-1/2 left-1.5 -translate-y-1/2" },
               { key: "center", label: "Center", cls: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
+              { key: "right", label: "Right", cls: "top-1/2 right-1.5 -translate-y-1/2" },
               { key: "bottom-left", label: "Lower Left", cls: "bottom-1.5 left-1.5" },
+              { key: "bottom", label: "Bottom", cls: "bottom-1.5 left-1/2 -translate-x-1/2" },
               { key: "bottom-right", label: "Lower Right", cls: "bottom-1.5 right-1.5" }
             ];
             const current = config.logoPosition || "bottom-right";
             return (
               <div className="flex items-center gap-4">
-                <div className="relative h-16 w-20 flex-shrink-0 rounded-lg border border-base-700 bg-base-950">
+                <div className="relative h-20 w-24 flex-shrink-0 rounded-lg border border-base-700 bg-base-950">
                   {corners.map((c) => (
                     <button
                       key={c.key}
