@@ -69,7 +69,7 @@ export default function App() {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [images, setImages] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
-  const [preview, setPreview] = useState({ before: null, after: null });
+  const [preview, setPreview] = useState({ before: null, after: null, deltaFlagged: false });
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -375,7 +375,16 @@ export default function App() {
     if (requestId === previewRequestId.current) {
       setPreviewLoading(false);
       if (result.ok) {
-        setPreview({ before: result.originalDataUrl, after: result.processedDataUrl });
+        // deltaFlagged means processor.js's before/after QA tripwire fired
+        // (an unusually large perceptual change — usually an unusual source
+        // photo sending auto-exposure/CLAHE somewhere extreme). Surface it
+        // here so the user can catch it on this one preview instead of
+        // discovering it 200 photos into a batch run.
+        setPreview({
+          before: result.originalDataUrl,
+          after: result.processedDataUrl,
+          deltaFlagged: !!result.deltaFlagged
+        });
       } else {
         showToast("error", result.error);
       }
@@ -408,7 +417,7 @@ export default function App() {
   // Regenerate preview whenever selected image or relevant config changes
   useEffect(() => {
     if (!selectedImage) {
-      setPreview({ before: null, after: null });
+      setPreview({ before: null, after: null, deltaFlagged: false });
       return;
     }
     if (previewDebounce.current) clearTimeout(previewDebounce.current);
@@ -520,16 +529,19 @@ export default function App() {
             : "Stopped before any images were processed."
       });
     } else {
+      const alreadyEnhancedNote = result.alreadyEnhancedSkips?.length
+        ? ` ${result.alreadyEnhancedSkips.length} already processed by PRISM — check your input folder.`
+        : "";
       setResultBanner({
-        type: result.failed > 0 ? "error" : "success",
+        type: result.failed > 0 ? "error" : result.alreadyEnhancedSkips?.length ? "error" : "success",
         message:
           result.failed > 0
             ? `Finished with issues: ${result.succeeded} succeeded, ${result.failed} failed${
                 result.skipped ? `, ${result.skipped} skipped` : ""
-              }.`
+              }.${alreadyEnhancedNote}`
             : `${result.succeeded} image${result.succeeded === 1 ? "" : "s"} processed successfully${
                 result.skipped ? ` (${result.skipped} skipped)` : ""
-              }.`
+              }.${alreadyEnhancedNote}`
       });
     }
     // Stays open until the user dismisses it via CLOSE — success, failure,
@@ -659,6 +671,16 @@ export default function App() {
                 <div className="flex items-center gap-1.5 rounded-full border border-base-700 bg-black/50 px-2.5 py-1 shadow-lg backdrop-blur-sm">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
                   <span className="text-xs font-medium text-slate-200">Rendering preview…</span>
+                </div>
+              </div>
+            )}
+            {!previewLoading && preview.deltaFlagged && (
+              <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+                <div className="flex items-center gap-1.5 rounded-full border border-yellow-700/60 bg-black/60 px-2.5 py-1 shadow-lg backdrop-blur-sm">
+                  <AlertTriangle className="h-3.5 w-3.5 text-yellow-400" strokeWidth={2} />
+                  <span className="text-xs font-medium text-yellow-200">
+                    Large change from original — worth a closer look before batch-processing similar photos.
+                  </span>
                 </div>
               </div>
             )}

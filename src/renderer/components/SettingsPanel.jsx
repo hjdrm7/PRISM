@@ -912,7 +912,7 @@ export default function SettingsPanel({
                     label="Outline size"
                     value={config.logoOutlineSizePercent}
                     min={1}
-                    max={20}
+                    max={10}
                     step={0.5}
                     onChange={set("logoOutlineSizePercent")}
                   />
